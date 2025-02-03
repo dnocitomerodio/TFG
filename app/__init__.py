@@ -1,13 +1,9 @@
 from flask import Flask
-from flask_pymongo import PyMongo
-from flask_jwt_extended import JWTManager
-import os
 from dotenv import load_dotenv
+import os
+from .extensions import mongo, jwt
 
 load_dotenv()
-
-mongo = PyMongo()
-jwt = JWTManager()
 
 def create_app():
     app = Flask(__name__)
@@ -17,6 +13,15 @@ def create_app():
 
     mongo.init_app(app)
     jwt.init_app(app)
+
+    try:
+        mongo.cx.server_info()
+        print("✅ Connection successful to MongoDB Atlas")
+        print(f"📊 Databases available: {mongo.cx.list_database_names()}")
+        print(f"🗂️ Using database: {mongo.db}")
+    except Exception as e:
+        print(f"❌ Error connecting to MongoDB Atlas: {e}")
+
 
     from .routes.auth import auth_bp
     from .routes.artpiece import artpiece_bp
