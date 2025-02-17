@@ -7,8 +7,17 @@ auth_bp = Blueprint("auth", __name__)
 @auth_bp.route("/register", methods=["POST"])
 def register():
     data = request.get_json()
+    existing_user = mongo.db.users.find_one({"email": data["email"]})
+    if existing_user:
+        return jsonify({"msg": "User already exists"}), 400
+    
     hashed_password = bcrypt.generate_password_hash(data["password"]).decode("utf-8")
-    user = {"email": data["email"], "password": hashed_password, "role": "user"}
+    user = {
+        "email": data["email"],
+        "password": hashed_password,
+        "role": "user",
+        "artpieces": []
+    }
 
     mongo.db.users.insert_one(user)
     return jsonify({"msg": "User registered successfully"}), 201
@@ -19,7 +28,7 @@ def login():
     user = mongo.db.users.find_one({"email": data["email"]})
 
     if user and bcrypt.check_password_hash(user["password"], data["password"]):
-        access_token = create_access_token(identity={"email": user["email"], "role": user["role"]})
+        access_token = create_access_token(identity=user["email"], additional_claims={"role": user["role"]})
         return jsonify({"access_token": access_token}), 200
 
     return jsonify({"msg": "Invalid credentials"}), 401

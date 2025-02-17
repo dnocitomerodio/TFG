@@ -83,8 +83,8 @@ The project uses the following key libraries:
 1. **Clone the repository**:
 
    ```bash
-   git clone https://github.com/your-repo/art-gallery-platform.git
-   cd art-gallery-platform
+   git clone https://github.com/your-repo/tfg.git
+   cd TFG
    ```
 
 2. **Create a virtual environment**:

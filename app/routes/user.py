@@ -1,42 +1,102 @@
-from flask import Blueprint, jsonify, request
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from app import mongo
-from app.models import ArtPiece
+from flask import Blueprint, request, jsonify
+from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
+from bson import ObjectId
+from app.extensions import mongo, bcrypt
+from app.models import User
 
 user_bp = Blueprint("user", __name__)
 
-@user_bp.route("/me", methods=["GET"])
+@user_bp.route("/profile", methods=["GET"])
 @jwt_required()
-def get_user():
-    current_user = get_jwt_identity()
-    user = mongo.db.users.find_one({"email": current_user["email"]}, {"_id": 0, "password": 0})
-    if not user:
-        return jsonify({"msg": "User not found"}), 404
-    return jsonify(user), 200
+def get_profile():
+    email = get_jwt_identity()
+    user_data = mongo.db.users.find_one({"email": email})
 
-@user_bp.route("/favorites", methods=["GET"])
-@jwt_required()
-def get_favorites():
-    current_user = get_jwt_identity()
-    user = mongo.db.users.find_one({"email": current_user["email"]})
-    if not user:
+    if not user_data:
         return jsonify({"msg": "User not found"}), 404
 
-    favorites = mongo.db.artpieces.find({"_id": {"$in": user.get("favorites", [])}})
-    return jsonify([ArtPiece(f).to_dict() for f in favorites]), 200
+    user = User(user_data)
+    return jsonify(user.to_dict()), 200
 
-@user_bp.route("/favorites", methods=["POST"])
+
+@user_bp.route("/update", methods=["PUT"])
 @jwt_required()
-def add_favorite():
-    current_user = get_jwt_identity()
+def update_profile():
+    identity = get_jwt_identity()
     data = request.get_json()
-    user = mongo.db.users.find_one({"email": current_user["email"]})
 
-    if not user:
+    update_data = {}
+    if "email" in data:
+        update_data["email"] = data["email"]
+    if "password" in data:
+        update_data["password"] = bcrypt.generate_password_hash(data["password"]).decode("utf-8")
+
+    if update_data:
+        mongo.db.users.update_one({"email": identity}, {"$set": update_data})
+        return jsonify({"msg": "Profile updated successfully"}), 200
+
+    return jsonify({"msg": "No data to update"}), 400
+
+@user_bp.route("/delete", methods=["DELETE"])
+@jwt_required()
+def delete_user():
+    identity = get_jwt_identity()
+    result = mongo.db.users.delete_one({"email": identity})
+
+    if result.deleted_count == 0:
         return jsonify({"msg": "User not found"}), 404
 
-    mongo.db.users.update_one(
-        {"email": current_user["email"]},
-        {"$addToSet": {"favorites": data["artpiece_id"]}}
+    return jsonify({"msg": "User deleted successfully"}), 200
+
+@user_bp.route("/remove/<artpiece_id>", methods=["DELETE"])
+@jwt_required()
+def remove_artpiece_from_user(artpiece_id):
+    identity = get_jwt_identity()
+    user_email = identity
+
+    result = mongo.db.users.update_one(
+        {"email": user_email},
+        {"$pull": {"artpieces": artpiece_id}}
     )
-    return jsonify({"msg": "Artpiece added to favorites"}), 200
+
+    if result.modified_count == 0:
+        return jsonify({"msg": "Art piece not found in user list"}), 404
+
+    users_with_artpiece = mongo.db.users.find_one({"artpieces": artpiece_id})
+
+    if not users_with_artpiece:
+        mongo.db.artpieces.delete_one({"_id": ObjectId(artpiece_id)})
+
+    return jsonify({"msg": "Art piece removed from user"}), 200
+
+@user_bp.route("/users", methods=["GET"])
+@jwt_required()
+def get_all_users():
+    claims = get_jwt()
+    if claims["role"] != "admin":
+        return jsonify({"msg": "Unauthorized"}), 403
+
+    users = list(mongo.db.users.find({}, {"password": 0}))
+    return jsonify(users), 200
+
+@user_bp.route("/update_role/<user_id>", methods=["PUT"])
+@jwt_required()
+def update_user_role(user_id):
+    claims = get_jwt()
+    if claims["role"] != "admin":
+        return jsonify({"msg": "Unauthorized"}), 403
+
+    data = request.get_json()
+    new_role = data.get("role")
+
+    if not new_role:
+        return jsonify({"msg": "New role is required"}), 400
+
+    result = mongo.db.users.update_one(
+        {"_id": ObjectId(user_id)}, {"$set": {"role": new_role}}
+    )
+
+    if result.matched_count == 0:
+        return jsonify({"msg": "User not found"}), 404
+
+    return jsonify({"msg": f"User {user_id} role updated to {new_role}"}), 200
