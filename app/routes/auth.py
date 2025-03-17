@@ -1,4 +1,8 @@
-from flask import Blueprint, request, jsonify
+import smtplib
+import secrets
+import os
+from email.message import EmailMessage
+from flask import Blueprint, request, jsonify, url_for
 from flask_jwt_extended import (
     create_access_token,
     create_refresh_token,
@@ -14,14 +18,32 @@ auth_bp = Blueprint("auth", __name__)
 
 failed_login_attempts = {}
 
-def is_valid_email(email):
-    return re.match(r"[^@]+@[^@]+\.[^@]+", email)
+SMTP_EMAIL = os.getenv("SMTP_EMAIL")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+
+
+def send_verification_email(email, token):
+    msg = EmailMessage()
+    msg["Subject"] = "Verify Your Account"
+    msg["From"] = SMTP_EMAIL
+    msg["To"] = email
+
+    verify_link = url_for("auth.verify_email", token=token, _external=True)
+    msg.set_content(f"Click the link to verify your account: {verify_link}")
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(SMTP_EMAIL, SMTP_PASSWORD)
+            server.send_message(msg)
+        print(f"✅ Email sent to {email}")
+    except Exception as e:
+        print(f"❌ Error sending email: {e}")
+
 
 @auth_bp.route("/register", methods=["POST"])
 def register():
     data = request.get_json()
-
-    if not is_valid_email(data.get("email", "")):
+    if not re.match(r"[^@]+@[^@]+\.[^@]+", data.get("email", "")):
         return jsonify({"msg": "Invalid email format"}), 400
 
     if len(data.get("password", "")) < 8:
@@ -31,25 +53,42 @@ def register():
     if existing_user:
         return jsonify({"msg": "User already exists"}), 400
     
-    hashed_password = bcrypt.generate_password_hash(data["password"], rounds=12).decode("utf-8")
+    hashed_password = bcrypt.generate_password_hash(data["password"]).decode("utf-8")
+    verification_token = secrets.token_urlsafe(32)
     
     user = {
         "email": data["email"],
         "password": hashed_password,
         "role": "user",
-        "artpieces": [],
-        "refresh_tokens": []
+        "verified": False,
+        "verification_token": verification_token
     }
-
     mongo.db.users.insert_one(user)
-    return jsonify({"msg": "User registered successfully"}), 201
+
+    send_verification_email(data["email"], verification_token)
+
+    return jsonify({"msg": "User registered. Please verify your email."}), 201
+
+
+@auth_bp.route("/verify/<token>", methods=["GET"])
+def verify_email(token):
+    user = mongo.db.users.find_one({"verification_token": token})
+    if not user:
+        return jsonify({"msg": "Invalid or expired token"}), 400
+    
+    mongo.db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"verified": True}, "$unset": {"verification_token": ""}}
+    )
+    return jsonify({"msg": "Email verified successfully. You can now log in."}), 200
+
 
 @auth_bp.route("/login", methods=["POST"])
 def login():
     data = request.get_json()
     email = data.get("email", "")
 
-    if not is_valid_email(email):
+    if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
         return jsonify({"msg": "Invalid email format"}), 400
 
     user = mongo.db.users.find_one({"email": email})
@@ -60,6 +99,9 @@ def login():
             return jsonify({"msg": "Too many failed login attempts. Try again later."}), 403
 
     if user and bcrypt.check_password_hash(user["password"], data["password"]):
+        if not user.get("verified", False):
+            return jsonify({"msg": "Please verify your email before logging in."}), 403
+        
         access_token = create_access_token(
             identity=user["email"],
             additional_claims={"role": user["role"]},
@@ -85,6 +127,7 @@ def login():
         failed_login_attempts[email] = (1, time.time())
 
     return jsonify({"msg": "Invalid credentials"}), 401
+
 
 @auth_bp.route("/refresh", methods=["POST"])
 @jwt_required(refresh=True)
@@ -112,6 +155,7 @@ def refresh_token():
     mongo.db.users.update_one({"email": identity}, {"$set": {"refresh_tokens": stored_tokens}})
 
     return jsonify({"access_token": new_access_token}), 200
+
 
 @auth_bp.route("/logout", methods=["POST"])
 @jwt_required(refresh=True)
