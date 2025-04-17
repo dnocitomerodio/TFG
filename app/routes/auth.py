@@ -10,7 +10,7 @@ from flask_jwt_extended import (
     get_jwt_identity
 )
 from app.extensions import mongo, bcrypt
-from datetime import timedelta
+from datetime import datetime,timedelta
 import re
 import time
 
@@ -24,12 +24,12 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 
 def send_verification_email(email, token):
     msg = EmailMessage()
-    msg["Subject"] = "Verify Your Account"
+    msg["Subject"] = "Welcome to Musaica"
     msg["From"] = SMTP_EMAIL
     msg["To"] = email
 
     verify_link = url_for("auth.verify_email", token=token, _external=True)
-    msg.set_content(f"Click the link to verify your account: {verify_link}")
+    msg.set_content(f"Your gmail account has been registered in our platform, click on the link to verify your account if it was done by you: {verify_link}")
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
@@ -39,6 +39,22 @@ def send_verification_email(email, token):
     except Exception as e:
         print(f"❌ Error sending email: {e}")
 
+def send_password_reset_email(email, token):
+    msg = EmailMessage()
+    msg['Subject'] = "Reset your password for your Musaica account"
+    msg['From'] = SMTP_EMAIL
+    msg['To'] = email
+
+    reset_link = url_for("auth.reset_password", token=token, _external=True)
+    msg.set_content(f"Click the link to reset your password: {reset_link}")
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(SMTP_EMAIL, SMTP_PASSWORD)
+            server.send_message(msg)
+        print(f"✅ Email sent to {email}")
+    except Exception as e:
+        print(f"❌ Error sending email: {e}")
 
 @auth_bp.route("/register", methods=["POST"])
 def register():
@@ -161,7 +177,7 @@ def refresh_token():
 @jwt_required(refresh=True)
 def logout():
     identity = get_jwt_identity()
-    refresh_token = request.headers.get("Authorization").split(" ")[1]  # Obtener el token enviado
+    refresh_token = request.headers.get("Authorization").split(" ")[1] 
 
     user = mongo.db.users.find_one({"email": identity})
 
@@ -172,3 +188,50 @@ def logout():
             mongo.db.users.update_one({"email": identity}, {"$set": {"refresh_tokens": stored_tokens}})
 
     return jsonify({"msg": "Logged out successfully"}), 200
+
+@auth_bp.route("/forgot-password", methods=["POST"])
+def forgot_password():
+    data = request.get_json()
+    email = data.get("email", "")
+    user = mongo.db.users.find_one({"email": email})
+
+    if not user:
+        return jsonify({"msg": "If the email exists, a reset link has been sent."}), 200
+
+    token = secrets.token_urlsafe(32)
+    expiration = datetime.utcnow() + timedelta(hours=1)
+
+    mongo.db.users.update_one(
+        {"email": email},
+        {"$set": {
+            "reset_token": token,
+            "reset_token_expiration": expiration
+        }}
+    )
+    send_password_reset_email(email, token)
+    return jsonify({"msg": "If the email exists, a reset link has been sent."}), 200
+
+@auth_bp.route("/reset-password/<token>", methods=["POST"])
+def reset_password(token):
+    data = request.get_json()
+    new_password = data.get("password", "")
+
+    if len(new_password) < 8:
+        return jsonify({"msg": "Password must be at least 8 characters long"}), 400
+
+    user = mongo.db.users.find_one({"reset_token": token})
+    if not user:
+        return jsonify({"msg": "Invalid or expired token"}), 400
+
+    expiration = user.get("reset_token_expiration")
+    if not expiration or datetime.utcnow() > expiration:
+        return jsonify({"msg": "Token has expired"}), 400
+
+    hashed_password = bcrypt.generate_password_hash(new_password).decode("utf-8")
+
+    mongo.db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"password": hashed_password},
+         "$unset": {"reset_token": "", "reset_token_expiration": ""}}
+    )
+    return jsonify({"msg": "Password reset successfully"}), 200
