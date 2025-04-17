@@ -11,6 +11,7 @@ from flask_jwt_extended import (
 )
 from app.extensions import mongo, bcrypt, limiter
 from datetime import datetime,timedelta
+from app.services.logger_service import log_user_action
 import re
 import time
 
@@ -60,21 +61,23 @@ def send_password_reset_email(email, token):
 @limiter.limit("3 per minute")
 def register():
     data = request.get_json()
-    if not re.match(r"[^@]+@[^@]+\.[^@]+", data.get("email", "")):
+    email = data.get("email", "")
+    
+    if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
         return jsonify({"msg": "Invalid email format"}), 400
 
     if len(data.get("password", "")) < 8:
         return jsonify({"msg": "Password must be at least 8 characters long"}), 400
 
-    existing_user = mongo.db.users.find_one({"email": data["email"]})
+    existing_user = mongo.db.users.find_one({"email": email})
     if existing_user:
         return jsonify({"msg": "User already exists"}), 400
-    
+
     hashed_password = bcrypt.generate_password_hash(data["password"]).decode("utf-8")
     verification_token = secrets.token_urlsafe(32)
-    
+
     user = {
-        "email": data["email"],
+        "email": email,
         "password": hashed_password,
         "role": "user",
         "verified": False,
@@ -82,7 +85,9 @@ def register():
     }
     mongo.db.users.insert_one(user)
 
-    send_verification_email(data["email"], verification_token)
+    log_user_action(email, "registered")
+
+    send_verification_email(email, verification_token)
 
     return jsonify({"msg": "User registered. Please verify your email."}), 201
 
@@ -92,11 +97,14 @@ def verify_email(token):
     user = mongo.db.users.find_one({"verification_token": token})
     if not user:
         return jsonify({"msg": "Invalid or expired token"}), 400
-    
+
     mongo.db.users.update_one(
         {"_id": user["_id"]},
         {"$set": {"verified": True}, "$unset": {"verification_token": ""}}
     )
+
+    log_user_action(user["email"], "email_verified")
+
     return jsonify({"msg": "Email verified successfully. You can now log in."}), 200
 
 
@@ -114,12 +122,14 @@ def login():
     if email in failed_login_attempts:
         attempts, last_attempt = failed_login_attempts[email]
         if attempts >= 5 and time.time() - last_attempt < 300:
+            log_user_action(email, "login_blocked_due_to_rate_limit")  # LOG
             return jsonify({"msg": "Too many failed login attempts. Try again later."}), 403
 
     if user and bcrypt.check_password_hash(user["password"], data["password"]):
         if not user.get("verified", False):
+            log_user_action(email, "login_rejected_unverified")  # LOG
             return jsonify({"msg": "Please verify your email before logging in."}), 403
-        
+
         access_token = create_access_token(
             identity=user["email"],
             additional_claims={"role": user["role"]},
@@ -137,7 +147,11 @@ def login():
         if email in failed_login_attempts:
             del failed_login_attempts[email]
 
+        log_user_action(email, "login_successful")
+
         return jsonify({"access_token": access_token, "refresh_token": refresh_token}), 200
+
+    log_user_action(email, "login_failed")
 
     if email in failed_login_attempts:
         failed_login_attempts[email] = (failed_login_attempts[email][0] + 1, time.time())
@@ -179,7 +193,7 @@ def refresh_token():
 @jwt_required(refresh=True)
 def logout():
     identity = get_jwt_identity()
-    refresh_token = request.headers.get("Authorization").split(" ")[1] 
+    refresh_token = request.headers.get("Authorization").split(" ")[1]
 
     user = mongo.db.users.find_one({"email": identity})
 
@@ -188,6 +202,8 @@ def logout():
         if refresh_token in stored_tokens:
             stored_tokens.remove(refresh_token)
             mongo.db.users.update_one({"email": identity}, {"$set": {"refresh_tokens": stored_tokens}})
+
+    log_user_action(identity, "logout")
 
     return jsonify({"msg": "Logged out successfully"}), 200
 

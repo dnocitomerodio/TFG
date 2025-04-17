@@ -3,21 +3,22 @@ from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from bson import ObjectId
 from app.extensions import mongo, bcrypt
 from app.models import User
+from app.services.logger_service import log_user_action
 
 user_bp = Blueprint("user", __name__)
 
 @user_bp.route("/profile", methods=["GET"])
 @jwt_required()
 def get_profile():
-    email = get_jwt_identity()
-    user_data = mongo.db.users.find_one({"email": email})
+    identity = get_jwt_identity()
+    user_data = mongo.db.users.find_one({"email": identity})
 
     if not user_data:
         return jsonify({"msg": "User not found"}), 404
 
     user = User(user_data)
+    log_user_action(identity, "Viewed their profile")
     return jsonify(user.to_dict()), 200
-
 
 @user_bp.route("/update", methods=["PUT"])
 @jwt_required()
@@ -33,6 +34,7 @@ def update_profile():
 
     if update_data:
         mongo.db.users.update_one({"email": identity}, {"$set": update_data})
+        log_user_action(identity, "Updated their profile")
         return jsonify({"msg": "Profile updated successfully"}), 200
 
     return jsonify({"msg": "No data to update"}), 400
@@ -46,6 +48,7 @@ def delete_user():
     if result.deleted_count == 0:
         return jsonify({"msg": "User not found"}), 404
 
+    log_user_action(identity, "Deleted their account")
     return jsonify({"msg": "User deleted successfully"}), 200
 
 @user_bp.route("/remove/<artpiece_id>", methods=["DELETE"])
@@ -67,6 +70,7 @@ def remove_artpiece_from_user(artpiece_id):
     if not users_with_artpiece:
         mongo.db.artpieces.delete_one({"_id": ObjectId(artpiece_id)})
 
+    log_user_action(user_email, f"Removed art piece {artpiece_id} from their collection")
     return jsonify({"msg": "Art piece removed from user"}), 200
 
 @user_bp.route("/users", methods=["GET"])
@@ -77,6 +81,7 @@ def get_all_users():
         return jsonify({"msg": "Unauthorized"}), 403
 
     users = list(mongo.db.users.find({}, {"password": 0}))
+    log_user_action(get_jwt_identity(), "Viewed all users")
     return jsonify(users), 200
 
 @user_bp.route("/update_role/<user_id>", methods=["PUT"])
@@ -99,4 +104,5 @@ def update_user_role(user_id):
     if result.matched_count == 0:
         return jsonify({"msg": "User not found"}), 404
 
+    log_user_action(get_jwt_identity(), f"Updated user {user_id}'s role to {new_role}")
     return jsonify({"msg": f"User {user_id} role updated to {new_role}"}), 200
