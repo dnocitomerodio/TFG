@@ -9,7 +9,7 @@ from flask_jwt_extended import (
     jwt_required,
     get_jwt_identity
 )
-from app.extensions import mongo, bcrypt
+from app.extensions import mongo, bcrypt, limiter
 from datetime import datetime,timedelta
 import re
 import time
@@ -57,6 +57,7 @@ def send_password_reset_email(email, token):
         print(f"❌ Error sending email: {e}")
 
 @auth_bp.route("/register", methods=["POST"])
+@limiter.limit("3 per minute")
 def register():
     data = request.get_json()
     if not re.match(r"[^@]+@[^@]+\.[^@]+", data.get("email", "")):
@@ -100,6 +101,7 @@ def verify_email(token):
 
 
 @auth_bp.route("/login", methods=["POST"])
+@limiter.limit("5 per minute")
 def login():
     data = request.get_json()
     email = data.get("email", "")
@@ -190,6 +192,7 @@ def logout():
     return jsonify({"msg": "Logged out successfully"}), 200
 
 @auth_bp.route("/forgot-password", methods=["POST"])
+@limiter.limit("2 per minute")
 def forgot_password():
     data = request.get_json()
     email = data.get("email", "")
@@ -212,6 +215,7 @@ def forgot_password():
     return jsonify({"msg": "If the email exists, a reset link has been sent."}), 200
 
 @auth_bp.route("/reset-password/<token>", methods=["POST"])
+@limiter.limit("2 per minute")
 def reset_password(token):
     data = request.get_json()
     new_password = data.get("password", "")
