@@ -2,7 +2,7 @@ import smtplib
 import secrets
 import os
 from email.message import EmailMessage
-from flask import Blueprint, request, jsonify, url_for
+from flask import Blueprint, redirect, request, jsonify, url_for
 from flask_jwt_extended import (
     create_access_token,
     create_refresh_token,
@@ -12,6 +12,7 @@ from flask_jwt_extended import (
 from app.extensions import mongo, bcrypt, limiter
 from datetime import datetime,timedelta
 from app.services.logger_service import log_user_action
+from flask_dance.contrib.google import google
 import re
 import time
 
@@ -255,3 +256,45 @@ def reset_password(token):
          "$unset": {"reset_token": "", "reset_token_expiration": ""}}
     )
     return jsonify({"msg": "Password reset successfully"}), 200
+
+@auth_bp.route("/google/callback")
+def google_login_callback():
+    if not google.authorized:
+        return redirect(url_for("google.login"))
+
+    resp = google.get("/oauth2/v2/userinfo")
+    if not resp.ok:
+        return jsonify({"msg": "Error fetching user info"}), 400
+
+    user_info = resp.json()
+    email = user_info["email"]
+
+    user = mongo.db.users.find_one({"email": email})
+
+    if not user:
+        new_user = {
+            "email": email,
+            "role": "user",
+            "verified": True,
+            "artpieces": [],
+            "refresh_tokens": []
+        }
+        mongo.db.users.insert_one(new_user)
+        user = new_user
+
+    access_token = create_access_token(identity=email, expires_delta=timedelta(days=1))
+    refresh_token = create_refresh_token(identity=email)
+
+    stored_tokens = user.get("refresh_tokens", [])
+    stored_tokens.append(refresh_token)
+    if len(stored_tokens) > 3:
+        stored_tokens.pop(0)
+
+    mongo.db.users.update_one({"email": email}, {"$set": {"refresh_tokens": stored_tokens}})
+
+    return jsonify({
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "msg": "Login with Google successful"
+    })
+
