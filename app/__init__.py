@@ -1,7 +1,9 @@
-from flask import Flask
+from flask import Flask, jsonify, request
 from dotenv import load_dotenv
 import os
 from .extensions import mongo, jwt
+from flask_cors import CORS
+from flask_talisman import Talisman
 
 load_dotenv()
 
@@ -10,6 +12,14 @@ def create_app():
 
     app.config["MONGO_URI"] = os.getenv("MONGO_URI") + "&tls=true&tlsAllowInvalidCertificates=true"
     app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")
+
+    CORS(app, resources={r"/*": {"origins": "*"}})
+    Talisman(app)
+
+    @app.before_request
+    def before_request():
+        if not request.is_secure and os.getenv("FLASK_ENV") != "development":
+            return jsonify({"msg": "HTTPS required"}), 403
 
     mongo.init_app(app)
     jwt.init_app(app)
