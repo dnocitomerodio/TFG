@@ -123,12 +123,12 @@ def login():
     if email in failed_login_attempts:
         attempts, last_attempt = failed_login_attempts[email]
         if attempts >= 5 and time.time() - last_attempt < 300:
-            log_user_action(email, "login_blocked_due_to_rate_limit")  # LOG
+            log_user_action(email, "login_blocked_due_to_rate_limit")
             return jsonify({"msg": "Too many failed login attempts. Try again later."}), 403
 
     if user and bcrypt.check_password_hash(user["password"], data["password"]):
         if not user.get("verified", False):
-            log_user_action(email, "login_rejected_unverified")  # LOG
+            log_user_action(email, "login_rejected_unverified")
             return jsonify({"msg": "Please verify your email before logging in."}), 403
 
         access_token = create_access_token(
@@ -281,6 +281,7 @@ def google_login_callback():
         }
         mongo.db.users.insert_one(new_user)
         user = new_user
+        log_user_action(email, "user created successfully with google")
 
     access_token = create_access_token(identity=email, expires_delta=timedelta(days=1))
     refresh_token = create_refresh_token(identity=email)
@@ -291,6 +292,7 @@ def google_login_callback():
         stored_tokens.pop(0)
 
     mongo.db.users.update_one({"email": email}, {"$set": {"refresh_tokens": stored_tokens}})
+    log_user_action(email, "login successfull with google")
 
     return jsonify({
         "access_token": access_token,
