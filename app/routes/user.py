@@ -7,6 +7,10 @@ from app.services.logger_service import log_user_action
 
 user_bp = Blueprint("user", __name__)
 
+def is_admin():
+    claims = get_jwt()
+    return claims.get("role") == "admin"
+
 @user_bp.route("/profile", methods=["GET"])
 @jwt_required()
 def get_profile():
@@ -24,11 +28,17 @@ def get_profile():
 @jwt_required()
 def update_profile():
     identity = get_jwt_identity()
-    data = request.get_json()
+    user_data = mongo.db.users.find_one({"email": identity})
 
+    if not user_data:
+        return jsonify({"msg": "User not found"}), 404
+
+    data = request.get_json()
     update_data = {}
-    if "email" in data:
-        update_data["email"] = data["email"]
+
+    if "email" in data and data["email"] != identity:
+        return jsonify({"msg": "Email change is not allowed"}), 403
+
     if "password" in data:
         update_data["password"] = bcrypt.generate_password_hash(data["password"]).decode("utf-8")
 
@@ -55,10 +65,9 @@ def delete_user():
 @jwt_required()
 def remove_artpiece_from_user(artpiece_id):
     identity = get_jwt_identity()
-    user_email = identity
 
     result = mongo.db.users.update_one(
-        {"email": user_email},
+        {"email": identity},
         {"$pull": {"artpieces": artpiece_id}}
     )
 
@@ -66,18 +75,16 @@ def remove_artpiece_from_user(artpiece_id):
         return jsonify({"msg": "Art piece not found in user list"}), 404
 
     users_with_artpiece = mongo.db.users.find_one({"artpieces": artpiece_id})
-
     if not users_with_artpiece:
         mongo.db.artpieces.delete_one({"_id": ObjectId(artpiece_id)})
 
-    log_user_action(user_email, f"Removed art piece {artpiece_id} from their collection")
+    log_user_action(identity, f"Removed art piece {artpiece_id} from their collection")
     return jsonify({"msg": "Art piece removed from user"}), 200
 
 @user_bp.route("/users", methods=["GET"])
 @jwt_required()
 def get_all_users():
-    claims = get_jwt()
-    if claims["role"] != "admin":
+    if not is_admin():
         return jsonify({"msg": "Unauthorized"}), 403
 
     users = list(mongo.db.users.find({}, {"password": 0}))
@@ -87,13 +94,11 @@ def get_all_users():
 @user_bp.route("/update_role/<user_id>", methods=["PUT"])
 @jwt_required()
 def update_user_role(user_id):
-    claims = get_jwt()
-    if claims["role"] != "admin":
+    if not is_admin():
         return jsonify({"msg": "Unauthorized"}), 403
 
     data = request.get_json()
     new_role = data.get("role")
-
     if not new_role:
         return jsonify({"msg": "New role is required"}), 400
 

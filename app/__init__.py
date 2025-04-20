@@ -1,11 +1,11 @@
-from flask import Flask, jsonify, request, url_for
+from flask import Flask, jsonify, request
 from dotenv import load_dotenv
 from flask_dance.contrib.google import make_google_blueprint, google
-from app.extensions import mongo
-import os
-from .extensions import mongo, jwt
+from flask_restx import Api
 from flask_cors import CORS
 from flask_talisman import Talisman
+from app.extensions import mongo, jwt
+import os
 
 load_dotenv()
 
@@ -19,13 +19,13 @@ def create_app():
     app.config["GOOGLE_OAUTH_CLIENT_SECRET"] = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
-    google_bp = make_google_blueprint(
-        scope=["openid", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"],
-        redirect_to="auth.google_login_callback"
-    )
-
     CORS(app, resources={r"/*": {"origins": "*"}})
-    Talisman(app)
+    Talisman(app,content_security_policy={
+    'default-src': ['\'self\''],
+    'script-src': ['\'self\'', '\'unsafe-inline\''],
+    'style-src': ['\'self\'', '\'unsafe-inline\''],
+    'img-src': ['\'self\'', 'data:']
+    })
 
     @app.before_request
     def before_request():
@@ -43,14 +43,26 @@ def create_app():
     except Exception as e:
         print(f"❌ Error connecting to MongoDB Atlas: {e}")
 
-
-    from .routes.auth import auth_bp
-    from .routes.artpiece import artpiece_bp
-    from .routes.user import user_bp
-
-    app.register_blueprint(auth_bp, url_prefix="/auth")
-    app.register_blueprint(artpiece_bp, url_prefix="/artpiece")
-    app.register_blueprint(user_bp, url_prefix="/user")
+    google_bp = make_google_blueprint(
+        scope=["openid", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"],
+        redirect_to="auth.google_login_callback"
+    )
     app.register_blueprint(google_bp, url_prefix="/auth/")
+
+    api = Api(
+        app,
+        version="1.0",
+        title="Musaica API",
+        description="Documentation of the API for the management of users and artworks",
+        doc="/"
+    )
+
+    from .routes.user_api import api as user_ns
+    from .routes.artpiece_api import api as artpiece_ns
+    from .routes.auth import auth_bp
+
+    api.add_namespace(user_ns, path="/user")
+    api.add_namespace(artpiece_ns, path="/artpiece")
+    app.register_blueprint(auth_bp, url_prefix="/auth")
 
     return app
