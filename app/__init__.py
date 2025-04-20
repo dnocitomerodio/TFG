@@ -59,10 +59,10 @@ def create_app():
 
     from .routes.user_api import api as user_ns
     from .routes.artpiece_api import api as artpiece_ns
-    from .routes.auth import auth_bp
+    from .routes.auth_api import api as auth_ns
 
     api.add_namespace(user_ns, path="/user")
     api.add_namespace(artpiece_ns, path="/artpiece")
-    app.register_blueprint(auth_bp, url_prefix="/auth")
+    api.add_namespace(auth_ns, path="/auth")
 
     return app
