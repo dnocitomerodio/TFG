@@ -131,9 +131,11 @@ def login():
             log_user_action(email, "login_rejected_unverified")
             return jsonify({"msg": "Please verify your email before logging in."}), 403
 
+        role = user.get("role", "user")
+
         access_token = create_access_token(
             identity=user["email"],
-            additional_claims={"role": user["role"]},
+            additional_claims={"role": role},
             expires_delta=timedelta(minutes=30)
         )
         refresh_token = create_refresh_token(identity=user["email"])

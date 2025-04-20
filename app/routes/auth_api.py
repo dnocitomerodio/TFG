@@ -14,7 +14,7 @@ api = Namespace("auth", description="Authentication related operations")
 user_model = api.model("User", {
     "email": fields.String(required=True, description="The email address of the user. This is unique and required for authentication."),
     "password": fields.String(required=True, description="The password for the user account. It should be securely hashed."),
-    "role": fields.String(required=True, description="The new role to assign to the user (e.g., 'admin', 'user').")
+    "role": fields.String(required=False, description="The new role to assign to the user (e.g., 'admin', 'user').")
 })
 
 @api.route("/register")
