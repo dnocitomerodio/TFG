@@ -22,6 +22,7 @@ user_model = api.model("User", {
 @api.route("/profile")
 class UserProfile(Resource):
     @jwt_required()
+    @api.doc(security="Bearer Auth", description="Requires JWT token. Accessible by any authenticated user.")
     def get(self):
         """Retrieve the profile of the authenticated user"""
         identity = get_jwt_identity()
@@ -37,6 +38,7 @@ class UserProfile(Resource):
 @api.route("/update")
 class UpdateProfile(Resource):
     @jwt_required()
+    @api.doc(security="Bearer Auth", description="Requires JWT token. Allows user to update their own profile.")
     def put(self):
         """Update the profile of the authenticated user (email and/or password)"""
         identity = get_jwt_identity()
@@ -64,6 +66,7 @@ class UpdateProfile(Resource):
 @api.route("/delete")
 class DeleteUser(Resource):
     @jwt_required()
+    @api.doc(security="Bearer Auth", description="Requires JWT token. Allows user to delete their own account.")
     def delete(self):
         """Delete the authenticated user's account"""
         identity = get_jwt_identity()
@@ -78,6 +81,7 @@ class DeleteUser(Resource):
 @api.route("/remove/<string:artpiece_id>")
 class RemoveArtpiece(Resource):
     @jwt_required()
+    @api.doc(security="Bearer Auth", description="Requires JWT token. User can remove an art piece from their collection.")
     def delete(self, artpiece_id):
         """Remove a specific art piece from the user's collection"""
         identity = get_jwt_identity()
@@ -100,6 +104,7 @@ class RemoveArtpiece(Resource):
 @api.route("/users")
 class AllUsers(Resource):
     @jwt_required()
+    @api.doc(security="Bearer Auth", description="Requires JWT token. Only accessible by admin users.")
     def get(self):
         """Get a list of all users (admin only)"""
         if not is_admin():
@@ -113,6 +118,7 @@ class AllUsers(Resource):
 class UpdateUserRole(Resource):
     @jwt_required()
     @api.expect(user_model)
+    @api.doc(security="Bearer Auth", description="Requires JWT token. Only accessible by admin users.")
     def put(self, user_id):
         """Update the role of a user (admin only)"""
         if not is_admin():

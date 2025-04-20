@@ -34,6 +34,7 @@ artpiece_model = api.model("ArtPiece", {
 @api.route("/")
 class ArtPieceList(Resource):
     @jwt_required()
+    @api.doc(security="Bearer Auth", description="Accessible by any authenticated user to view art pieces.")
     def get(self):
         """Retrieve a list of art pieces, with optional filtering and pagination"""
         identity = get_jwt_identity()
@@ -58,6 +59,7 @@ class ArtPieceList(Resource):
 
     @jwt_required()
     @api.expect(artpiece_model)
+    @api.doc(security="Bearer Auth", description="Only accessible by admins to add new art pieces.")
     def post(self):
         """Add a new art piece to the collection (admin only)"""
         identity = get_jwt_identity()
@@ -74,6 +76,7 @@ class ArtPieceList(Resource):
 @api.route("/<string:artpiece_id>")
 class ArtPieceById(Resource):
     @jwt_required()
+    @api.doc(security="Bearer Auth", description="Accessible by any authenticated user to view a specific art piece.")
     def get(self, artpiece_id):
         """Retrieve a specific art piece by its ID"""
         identity = get_jwt_identity()
@@ -85,6 +88,7 @@ class ArtPieceById(Resource):
         return artpiece, 200
 
     @jwt_required()
+    @api.doc(security="Bearer Auth", description="Only accessible by admins to update an art piece.")
     def put(self, artpiece_id):
         """Update the details of a specific art piece (admin only)"""
         identity = get_jwt_identity()
@@ -104,6 +108,7 @@ class ArtPieceById(Resource):
         return {"msg": "Art piece updated successfully"}, 200
 
     @jwt_required()
+    @api.doc(security="Bearer Auth", description="Only accessible by admins to delete an art piece.")
     def delete(self, artpiece_id):
         """Delete a specific art piece by its ID (admin only)"""
         identity = get_jwt_identity()
@@ -121,6 +126,7 @@ class ArtPieceById(Resource):
 class AddArtPieceToUser(Resource):
     @jwt_required()
     @api.expect(artpiece_model)
+    @api.doc(security="Bearer Auth", description="Accessible by any authenticated user to add an art piece to their collection.")
     def post(self):
         """Add an art piece to the authenticated user's collection"""
         identity = get_jwt_identity()
@@ -149,6 +155,7 @@ class AddArtPieceToUser(Resource):
 @api.route("/remove_from_user/<string:artpiece_id>")
 class RemoveArtPieceFromUser(Resource):
     @jwt_required()
+    @api.doc(security="Bearer Auth", description="Accessible by any authenticated user to remove an art piece from their collection.")
     def delete(self, artpiece_id):
         """Remove a specific art piece from the authenticated user's collection"""
         identity = get_jwt_identity()

@@ -22,7 +22,10 @@ class Register(Resource):
     @limiter.limit("3 per minute")
     @api.expect(user_model, validate=True)
     def post(self):
-        """Register a new user and send verification email"""
+        """Register a new user and send verification email
+        - **No JWT required**.
+        - **Any user** can register.
+        """
         data = request.get_json()
         email = data.get("email")
         password = data.get("password")
@@ -56,7 +59,10 @@ class Register(Resource):
 @api.route("/verify/<string:token>")
 class VerifyEmail(Resource):
     def get(self, token):
-        """Verify email using token sent via email"""
+        """Verify email using token sent via email
+        - **No JWT required**.
+        - **Any user** can verify their email using the token received.
+        """
         user = mongo.db.users.find_one({"verification_token": token})
         if not user:
             return {"msg": "Invalid or expired token"}, 400
@@ -73,7 +79,10 @@ class Login(Resource):
     @limiter.limit("5 per minute")
     @api.expect(user_model, validate=True)
     def post(self):
-        """Authenticate user and return access and refresh tokens"""
+        """Authenticate user and return access and refresh tokens
+        - **No JWT required**.
+        - **Any registered user** can log in to get an access token and refresh token.
+        """
         data = request.get_json()
         email = data["email"]
         password = data["password"]
@@ -110,7 +119,10 @@ class Login(Resource):
 class TokenRefresh(Resource):
     @jwt_required(refresh=True)
     def post(self):
-        """Refresh access token using a valid refresh token"""
+        """Refresh access token using a valid refresh token
+        - **JWT required** (refresh token).
+        - **Any authenticated user** can refresh their access token.
+        """
         identity = get_jwt_identity()
         refresh_token = request.headers.get("Authorization").split(" ")[1]
 
@@ -134,7 +146,10 @@ class TokenRefresh(Resource):
 class Logout(Resource):
     @jwt_required(refresh=True)
     def post(self):
-        """Logout user and invalidate the refresh token"""
+        """Logout user and invalidate the refresh token
+        - **JWT required** (refresh token).
+        - **Any authenticated user** can log out by invalidating their refresh token.
+        """
         identity = get_jwt_identity()
         refresh_token = request.headers.get("Authorization").split(" ")[1]
 
@@ -149,7 +164,10 @@ class Logout(Resource):
 class ForgotPassword(Resource):
     @limiter.limit("2 per minute")
     def post(self):
-        """Send a password reset link to the user's email"""
+        """Send a password reset link to the user's email
+        - **No JWT required**.
+        - **Any user** can request a password reset, but they must provide the email.
+        """
         email = request.json.get("email", "")
         user = mongo.db.users.find_one({"email": email})
 
@@ -171,7 +189,10 @@ class ForgotPassword(Resource):
 class ResetPassword(Resource):
     @limiter.limit("2 per minute")
     def post(self, token):
-        """Reset user password using the reset token"""
+        """Reset user password using the reset token
+        - **No JWT required**.
+        - **Any user** with a valid reset token can reset their password.
+        """
         new_password = request.json.get("password", "")
 
         if len(new_password) < 8:
