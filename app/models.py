@@ -2,6 +2,7 @@ from flask_pymongo import ObjectId
 
 class ArtPiece:
     def __init__(self, data):
+        self._id = str(data.get("_id", ""))
         self.title = data.get("title")
         self.author = data.get("author")
         self.year = data.get("year")
@@ -17,8 +18,22 @@ class ArtPiece:
         self.source_url = data.get("source_url", "")
 
     def to_dict(self):
-        return vars(self)
-
+        return {
+            "_id": self._id,
+            "title": self.title,
+            "author": self.author,
+            "year": self.year,
+            "style": self.style,
+            "museum": self.museum,
+            "location": self.location,
+            "medium": self.medium,
+            "dimensions": self.dimensions,
+            "image": self.image,
+            "description": self.description,
+            "tags": self.tags,
+            "external_id": self.external_id,
+            "source_url": self.source_url
+        }
 
 class User:
     def __init__(self, data):
