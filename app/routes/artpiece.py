@@ -1,4 +1,5 @@
-from flask import Blueprint, request, jsonify
+from flask import request
+from flask_restx import Namespace, Resource, fields
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from bson import ObjectId
 from app.extensions import mongo
@@ -6,133 +7,171 @@ from app.services.external_api import ExternalAPI
 from app.models import ArtPiece
 from app.services.logger_service import log_user_action
 
-artpiece_bp = Blueprint("artpiece", __name__)
-external_api = ExternalAPI("https://api.wikidata.org/sparql")
+api = Namespace("artpiece", description="Manage art pieces including CRUD and user collection actions.")
+
+external_api = ExternalAPI("https://query.wikidata.org/sparql")
 
 def is_admin():
     return get_jwt().get("role") == "admin"
 
-@artpiece_bp.route("/", methods=["GET"])
-@jwt_required()
-def get_art_pieces():
-    identity = get_jwt_identity()
-    query = request.args.get("query", "")
-    page = int(request.args.get("page", 1))
-    limit = int(request.args.get("limit", 10))
-    skip = (page - 1) * limit
-    results = list(mongo.db.artpieces.find().skip(skip).limit(limit))
+def convert_objectid_to_str(obj):
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    if isinstance(obj, dict):
+        return {k: convert_objectid_to_str(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [convert_objectid_to_str(item) for item in obj]
+    return obj
 
-    if not results and query:
-        external_results = external_api.fetch_art_pieces(query, limit=limit)
-        for result in external_results:
-            artpiece = ArtPiece(result).to_dict()
-            mongo.db.artpieces.insert_one(artpiece)
-            results.append(artpiece)
-        log_user_action(identity, f"Searched external API for art pieces with query: '{query}'")
-    else:
-        log_user_action(identity, f"Viewed art pieces list (query='{query}', page={page}, limit={limit})")
+artpiece_model = api.model("ArtPiece", {
+    "title": fields.String(required=True, description="Title of the art piece"),
+    "author": fields.String(required=True, description="Author of the art piece"),
+    "year": fields.Integer(description="Year created"),
+    "style": fields.String(description="Artistic style"),
+    "museum": fields.String(description="Museum where it's located"),
+    "location": fields.String(description="Location details"),
+    "medium": fields.String(description="Medium used (e.g., painting)"),
+    "dimensions": fields.String(description="Size of the piece"),
+    "image": fields.String(description="URL to image"),
+    "description": fields.String(description="Detailed description"),
+    "tags": fields.List(fields.String, description="Tags related to the piece"),
+    "external_id": fields.String(description="External reference ID"),
+    "source_url": fields.String(description="Source URL if fetched externally")
+})
 
-    return jsonify(results), 200
+@api.route("/")
+class ArtPieceList(Resource):
+    @jwt_required()
+    @api.doc(security="Bearer Auth")
+    def get(self):
+        identity = get_jwt_identity()
+        query = request.args.get("query", "")
+        page = int(request.args.get("page", 1))
+        limit = int(request.args.get("limit", 10))
+        skip = (page - 1) * limit
 
-@artpiece_bp.route("/<artpiece_id>", methods=["GET"])
-@jwt_required()
-def get_artpiece(artpiece_id):
-    identity = get_jwt_identity()
-    artpiece = mongo.db.artpieces.find_one({"_id": ObjectId(artpiece_id)})
-    if not artpiece:
-        return jsonify({"msg": "Art piece not found"}), 404
+        results = list(mongo.db.artpieces.find().skip(skip).limit(limit))
 
-    log_user_action(identity, f"Viewed art piece {artpiece_id}")
-    return jsonify(artpiece), 200
+        if not results and query:
+            external_results = external_api.fetch_art_pieces(query, limit=limit)
+            for result in external_results:
+                artpiece = ArtPiece(result).to_dict()
+                mongo.db.artpieces.insert_one(artpiece)
+                results.append(artpiece)
+            log_user_action(identity, f"Searched external API for art pieces: '{query}'")
+        else:
+            log_user_action(identity, f"Viewed art pieces (query='{query}', page={page}, limit={limit})")
 
-@artpiece_bp.route("/add_to_user", methods=["POST"])
-@jwt_required()
-def add_artpiece_to_user():
-    identity = get_jwt_identity()
-    data = request.get_json()
+        return [convert_objectid_to_str(r) for r in results], 200
 
-    artpiece_data = ArtPiece(data).to_dict()
-    existing = mongo.db.artpieces.find_one({
-        "title": artpiece_data["title"],
-        "author": artpiece_data["author"]
-    })
+    @jwt_required()
+    @api.expect(artpiece_model)
+    @api.doc(security="Bearer Auth")
+    def post(self):
+        identity = get_jwt_identity()
+        if not is_admin():
+            return {"msg": "Unauthorized"}, 403
 
-    if existing:
-        artpiece_id = str(existing["_id"])
-    else:
-        result = mongo.db.artpieces.insert_one(artpiece_data)
-        artpiece_id = str(result.inserted_id)
+        data = request.get_json()
+        artpiece = ArtPiece(data).to_dict()
+        mongo.db.artpieces.insert_one(artpiece)
+        log_user_action(identity, "Added new art piece")
+        return {"msg": "Art piece added successfully"}, 201
 
-    mongo.db.users.update_one(
-        {"email": identity},
-        {"$addToSet": {"artpieces": artpiece_id}}
-    )
+@api.route("/<string:artpiece_id>")
+class ArtPieceById(Resource):
+    @jwt_required()
+    @api.doc(security="Bearer Auth")
+    def get(self, artpiece_id):
+        identity = get_jwt_identity()
+        artpiece = mongo.db.artpieces.find_one({"_id": ObjectId(artpiece_id)})
+        if not artpiece:
+            return {"msg": "Art piece not found"}, 404
 
-    log_user_action(identity, f"Added art piece {artpiece_id} to their collection")
-    return jsonify({"msg": "Art piece added to user", "artpiece_id": artpiece_id}), 200
+        log_user_action(identity, f"Viewed art piece {artpiece_id}")
+        return convert_objectid_to_str(artpiece), 200
 
-@artpiece_bp.route("/remove_from_user/<artpiece_id>", methods=["DELETE"])
-@jwt_required()
-def remove_artpiece_from_user(artpiece_id):
-    identity = get_jwt_identity()
+    @jwt_required()
+    @api.expect(artpiece_model)
+    @api.doc(security="Bearer Auth")
+    def put(self, artpiece_id):
+        identity = get_jwt_identity()
+        if not is_admin():
+            return {"msg": "Unauthorized"}, 403
 
-    result = mongo.db.users.update_one(
-        {"email": identity},
-        {"$pull": {"artpieces": artpiece_id}}
-    )
+        data = request.get_json()
+        result = mongo.db.artpieces.update_one(
+            {"_id": ObjectId(artpiece_id)},
+            {"$set": data}
+        )
 
-    if result.modified_count == 0:
-        return jsonify({"msg": "Art piece not found in user list"}), 404
+        if result.matched_count == 0:
+            return {"msg": "Art piece not found"}, 404
 
-    still_used = mongo.db.users.find_one({"artpieces": artpiece_id})
-    if not still_used:
-        mongo.db.artpieces.delete_one({"_id": ObjectId(artpiece_id)})
+        log_user_action(identity, f"Updated art piece {artpiece_id}")
+        return {"msg": "Art piece updated"}, 200
 
-    log_user_action(identity, f"Removed art piece {artpiece_id} from their collection")
-    return jsonify({"msg": "Art piece removed from user"}), 200
+    @jwt_required()
+    @api.doc(security="Bearer Auth")
+    def delete(self, artpiece_id):
+        identity = get_jwt_identity()
+        if not is_admin():
+            return {"msg": "Unauthorized"}, 403
 
-@artpiece_bp.route("/", methods=["POST"])
-@jwt_required()
-def add_artpiece():
-    identity = get_jwt_identity()
-    if not is_admin():
-        return jsonify({"msg": "Unauthorized"}), 403
+        result = mongo.db.artpieces.delete_one({"_id": ObjectId(artpiece_id)})
+        if result.deleted_count == 0:
+            return {"msg": "Art piece not found"}, 404
 
-    data = request.get_json()
-    artpiece = ArtPiece(data).to_dict()
-    mongo.db.artpieces.insert_one(artpiece)
-    log_user_action(identity, "Added a new art piece")
-    return jsonify({"msg": "Art piece added successfully"}), 201
+        log_user_action(identity, f"Deleted art piece {artpiece_id}")
+        return {"msg": "Art piece deleted"}, 200
 
-@artpiece_bp.route("/<artpiece_id>", methods=["PUT"])
-@jwt_required()
-def update_artpiece(artpiece_id):
-    identity = get_jwt_identity()
-    if not is_admin():
-        return jsonify({"msg": "Unauthorized"}), 403
+@api.route("/add_to_user")
+class AddToUserCollection(Resource):
+    @jwt_required()
+    @api.expect(artpiece_model)
+    @api.doc(security="Bearer Auth")
+    def post(self):
+        identity = get_jwt_identity()
+        data = request.get_json()
+        artpiece_data = ArtPiece(data).to_dict()
 
-    data = request.get_json()
-    update_result = mongo.db.artpieces.update_one(
-        {"_id": ObjectId(artpiece_id)},
-        {"$set": data}
-    )
+        existing = mongo.db.artpieces.find_one({
+            "title": artpiece_data["title"],
+            "author": artpiece_data["author"]
+        })
 
-    if update_result.matched_count == 0:
-        return jsonify({"msg": "Art piece not found"}), 404
+        if existing:
+            artpiece_id = str(existing["_id"])
+        else:
+            result = mongo.db.artpieces.insert_one(artpiece_data)
+            artpiece_id = str(result.inserted_id)
 
-    log_user_action(identity, f"Updated art piece {artpiece_id}")
-    return jsonify({"msg": "Art piece updated successfully"}), 200
+        mongo.db.users.update_one(
+            {"email": identity},
+            {"$addToSet": {"artpieces": artpiece_id}}
+        )
 
-@artpiece_bp.route("/<artpiece_id>", methods=["DELETE"])
-@jwt_required()
-def delete_artpiece(artpiece_id):
-    identity = get_jwt_identity()
-    if not is_admin():
-        return jsonify({"msg": "Unauthorized"}), 403
+        log_user_action(identity, f"Added art piece {artpiece_id} to collection")
+        return {"msg": "Art piece added", "artpiece_id": artpiece_id}, 200
 
-    delete_result = mongo.db.artpieces.delete_one({"_id": ObjectId(artpiece_id)})
-    if delete_result.deleted_count == 0:
-        return jsonify({"msg": "Art piece not found"}), 404
+@api.route("/remove_from_user/<string:artpiece_id>")
+class RemoveFromUserCollection(Resource):
+    @jwt_required()
+    @api.doc(security="Bearer Auth")
+    def delete(self, artpiece_id):
+        identity = get_jwt_identity()
 
-    log_user_action(identity, f"Deleted art piece {artpiece_id}")
-    return jsonify({"msg": "Art piece deleted successfully"}), 200
+        result = mongo.db.users.update_one(
+            {"email": identity},
+            {"$pull": {"artpieces": artpiece_id}}
+        )
+
+        if result.modified_count == 0:
+            return {"msg": "Art piece not in user collection"}, 404
+
+        still_used = mongo.db.users.find_one({"artpieces": artpiece_id})
+        if not still_used:
+            mongo.db.artpieces.delete_one({"_id": ObjectId(artpiece_id)})
+
+        log_user_action(identity, f"Removed art piece {artpiece_id} from collection")
+        return {"msg": "Art piece removed"}, 200

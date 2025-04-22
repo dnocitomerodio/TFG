@@ -49,15 +49,6 @@ def create_app():
     )
     app.register_blueprint(google_bp, url_prefix="/auth/")
 
-    from .routes.user import user_bp
-    from .routes.artpiece import artpiece_bp
-    from .routes.auth import auth_bp
-
-    
-    app.register_blueprint(user_bp)
-    app.register_blueprint(artpiece_bp)
-    app.register_blueprint(auth_bp)
-
     api = Api(
         app,
         version="1.0",
@@ -66,9 +57,9 @@ def create_app():
         doc="/"
     )
     
-    from .routes.user_api import api as user_ns
-    from .routes.artpiece_api import api as artpiece_ns
-    from .routes.auth_api import api as auth_ns
+    from .routes.user import api as user_ns
+    from .routes.artpiece import api as artpiece_ns
+    from .routes.auth import api as auth_ns
 
     api.add_namespace(user_ns, path="/user")
     api.add_namespace(artpiece_ns, path="/artpiece")
