@@ -3,9 +3,10 @@ from flask_restx import Namespace, Resource, fields
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from bson import ObjectId
 from app.extensions import mongo
-from app.services.external_api import ExternalAPI
+from app.services.external_api import ExternalAPI, parse_result
 from app.models import ArtPiece
 from app.services.logger_service import log_user_action
+from pymongo.errors import DuplicateKeyError
 
 api = Namespace("artpiece", description="Manage art pieces including CRUD and user collection actions.")
 
@@ -55,9 +56,13 @@ class ArtPieceList(Resource):
         if not results and query:
             external_results = external_api.fetch_art_pieces(query, limit=limit)
             for result in external_results:
-                artpiece = ArtPiece(result).to_dict()
-                mongo.db.artpieces.insert_one(artpiece)
-                results.append(artpiece)
+                artpiece = parse_result(result)
+                try:
+                    mongo.db.artpieces.insert_one(artpiece)
+                    results.append(artpiece)
+                except DuplicateKeyError:
+                    existing = mongo.db.artpieces.find_one({"_id": artpiece["_id"]})
+                    results.append(existing)
             log_user_action(identity, f"Searched external API for art pieces: '{query}'")
         else:
             log_user_action(identity, f"Viewed art pieces (query='{query}', page={page}, limit={limit})")
