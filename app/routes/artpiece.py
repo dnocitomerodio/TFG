@@ -3,7 +3,7 @@ from flask_restx import Namespace, Resource, fields
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from bson import ObjectId
 from app.extensions import mongo
-from app.services.external_api import ExternalAPI, parse_result
+from app.services.external_api import ExternalAPI
 from app.models import ArtPiece
 from app.services.logger_service import log_user_action
 from pymongo.errors import DuplicateKeyError
@@ -47,27 +47,18 @@ class ArtPieceList(Resource):
     def get(self):
         identity = get_jwt_identity()
         query = request.args.get("query", "")
-        page = int(request.args.get("page", 1))
         limit = int(request.args.get("limit", 10))
-        skip = (page - 1) * limit
+        offset = int(request.args.get("offset", 0))
+        expand = request.args.get("expand", "false").lower() == "true"
 
-        results = list(mongo.db.artpieces.find().skip(skip).limit(limit))
+        if not query:
+            return {"msg": "Query parameter is required"}, 400
 
-        if not results and query:
-            external_results = external_api.fetch_art_pieces(query, limit=limit)
-            for result in external_results:
-                artpiece = parse_result(result)
-                try:
-                    mongo.db.artpieces.insert_one(artpiece)
-                    results.append(artpiece)
-                except DuplicateKeyError:
-                    existing = mongo.db.artpieces.find_one({"_id": artpiece["_id"]})
-                    results.append(existing)
-            log_user_action(identity, f"Searched external API for art pieces: '{query}'")
-        else:
-            log_user_action(identity, f"Viewed art pieces (query='{query}', page={page}, limit={limit})")
+        parsed_results = external_api.fetch_art_pieces(query, limit=limit, offset=offset, expand=expand)
 
-        return [convert_objectid_to_str(r) for r in results], 200
+        log_user_action(identity, f"Searched external API for art pieces: '{query}', expand={expand}")
+
+        return parsed_results, 200
 
     @jwt_required()
     @api.expect(artpiece_model)
@@ -82,6 +73,19 @@ class ArtPieceList(Resource):
         mongo.db.artpieces.insert_one(artpiece)
         log_user_action(identity, "Added new art piece")
         return {"msg": "Art piece added successfully"}, 201
+
+@api.route("/external/<string:external_id>")
+class ExternalArtPieceDetail(Resource):
+    @jwt_required()
+    @api.doc(security="Bearer Auth")
+    def get(self, external_id):
+        identity = get_jwt_identity()
+        result = external_api.fetch_single_art_piece(external_id)
+        if not result:
+            return {"msg": "Art piece not found"}, 404
+
+        log_user_action(identity, f"Viewed external art piece {external_id}")
+        return result, 200
 
 @api.route("/<string:artpiece_id>")
 class ArtPieceById(Resource):
@@ -138,16 +142,16 @@ class AddToUserCollection(Resource):
     def post(self):
         identity = get_jwt_identity()
         data = request.get_json()
-        artpiece_data = ArtPiece(data).to_dict()
 
-        existing = mongo.db.artpieces.find_one({
-            "title": artpiece_data["title"],
-            "author": artpiece_data["author"]
-        })
+        if "external_id" not in data or not data["external_id"]:
+            return {"msg": "Missing external_id"}, 400
+
+        existing = mongo.db.artpieces.find_one({"external_id": data["external_id"]})
 
         if existing:
             artpiece_id = str(existing["_id"])
         else:
+            artpiece_data = ArtPiece(data).to_dict()
             result = mongo.db.artpieces.insert_one(artpiece_data)
             artpiece_id = str(result.inserted_id)
 

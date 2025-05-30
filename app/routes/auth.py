@@ -24,10 +24,6 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 
 failed_login_attempts = {}
 
-# =========================
-# Email Utility Functions
-# =========================
-
 def send_verification_email(email, token):
     msg = EmailMessage()
     msg["Subject"] = "Welcome to Musaica"
@@ -59,10 +55,6 @@ def send_password_reset_email(email, token):
         print(f"✅ Password reset email sent to {email}")
     except Exception as e:
         print(f"❌ Error sending password reset email: {e}")
-
-# =========================
-# Auth Routes
-# =========================
 
 @api.route("/register")
 class Register(Resource):
