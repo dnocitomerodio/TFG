@@ -168,10 +168,10 @@ class ExternalAPI:
         SELECT ?item ?itemLabel ?creatorLabel ?image ?museumLabel (COUNT(?link) AS ?linkCount)
         WHERE {{
             ?item wdt:P31 wd:Q3305213;
-                rdfs:label ?label.
+                rdfs:label ?label;
+                wdt:P18 ?image.  
             FILTER(CONTAINS(LCASE(?label), LCASE("{query}")) && LANG(?label) = "en")
             OPTIONAL {{ ?item wdt:P170 ?creator. }}
-            OPTIONAL {{ ?item wdt:P18 ?image. }}
             OPTIONAL {{ ?item wdt:P276 ?museum. }}
 
             # Contar enlaces en Wikipedia en inglés como proxy de relevancia
