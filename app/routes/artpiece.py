@@ -1,4 +1,4 @@
-from flask import request
+from flask import jsonify, request
 from flask_restx import Namespace, Resource, fields
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from bson import ObjectId
@@ -184,3 +184,38 @@ class RemoveFromUserCollection(Resource):
 
         log_user_action(identity, f"Removed art piece {artpiece_id} from collection")
         return {"msg": "Art piece removed"}, 200
+
+@api.route("/artist")
+class ArtistSearch(Resource):
+    @jwt_required()
+    @api.doc(security="Bearer Auth", params={"query": "Artist name to search for"})
+    def get(self):
+        identity = get_jwt_identity()
+        artist_name = request.args.get("query", "")
+        if not artist_name:
+            return {"msg": "Query parameter is required (artist name)"}, 400
+
+        artist_data = external_api.fetch_artist_data(artist_name)
+        if not artist_data:
+            return {"msg": f"Artist '{artist_name}' not found in Wikidata"}, 404
+
+        artworks = external_api.fetch_works_by_artist(artist_data["wikidata_id"], limit=50)
+
+        formatted_artworks = []
+        for work in artworks:
+            item = work.get("item", {}).get("value", "")
+            external_id = item.split("/")[-1] if item else ""
+            formatted_artworks.append({
+                "external_id": external_id,
+                "title": work.get("itemLabel", {}).get("value", ""),
+                "description": work.get("itemDescription", {}).get("value", ""),
+                "source_url": f"https://www.wikidata.org/wiki/{external_id}" if external_id else "",
+                "sitelinks": int(work.get("sitelinks", {}).get("value", 0)) if "sitelinks" in work else 0
+            })
+
+        log_user_action(identity, f"Searched artworks for artist query: '{artist_name}'")
+
+        return {
+            "artist": artist_data,
+            "artworks": formatted_artworks
+        }, 200

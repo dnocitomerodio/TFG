@@ -1,5 +1,4 @@
 import requests
-import threading
 import os
 from dotenv import load_dotenv
 from urllib.parse import quote
@@ -13,28 +12,8 @@ class ExternalAPI:
         self.cache = {}
 
     def fetch_art_pieces(self, query, limit=10, offset=0, expand=False):
-        cache_key = f"{query.lower()}|{limit}|{offset}|{expand}"
-
-        if expand and cache_key in self.cache:
-            results = self.cache[cache_key]
-        else:
-            enriched_key = f"{query.lower()}|{limit}|{offset}|True"
-            if not expand and enriched_key in self.cache:
-                results = self.cache[enriched_key]
-            else:
-                base_key = f"{query.lower()}|{limit}|{offset}|False"
-                if base_key in self.cache:
-                    wikidata_results = self.cache[base_key]
-                else:
-                    wikidata_raw = self.fetch_from_wikidata(query, limit, offset)
-                    wikidata_results = [parse_result_wikidata(r) for r in wikidata_raw]
-                    self.cache[base_key] = wikidata_results
-
-                if not expand:
-                    threading.Thread(target=self._expand_and_cache, args=(query, limit, offset)).start()
-                    results = wikidata_results
-                else:
-                    results = wikidata_results
+        wikidata_raw = self.fetch_from_wikidata(query, limit, offset)
+        results = [parse_result_wikidata(r) for r in wikidata_raw]
 
         seen = set()
         deduped_results = []
@@ -114,7 +93,6 @@ class ExternalAPI:
 
         return result
 
-
     def fetch_single_art_piece(self, external_id: str):
         for key, results in self.cache.items():
             if key.endswith("|True"):
@@ -165,28 +143,25 @@ class ExternalAPI:
 
     def fetch_from_wikidata(self, query, limit, offset=0):
         sparql_query = f"""
-        SELECT ?item ?itemLabel ?creatorLabel ?image ?museumLabel (COUNT(?link) AS ?linkCount)
-        WHERE {{
-            ?item wdt:P31 wd:Q3305213;
-                rdfs:label ?label;
-                wdt:P18 ?image.  
-            FILTER(CONTAINS(LCASE(?label), LCASE("{query}")) && LANG(?label) = "en")
+        SELECT ?item ?itemLabel ?creatorLabel ?museumLabel ?image WHERE {{
+            SERVICE wikibase:mwapi {{
+                bd:serviceParam wikibase:endpoint "www.wikidata.org";
+                                wikibase:api "EntitySearch";
+                                mwapi:search "{query}";
+                                mwapi:language "en".
+                ?item wikibase:apiOutputItem mwapi:item.
+                ?num wikibase:apiOrdinal true.
+            }}
+            ?item wdt:P31 wd:Q3305213.  # Instancia de obra de arte
             OPTIONAL {{ ?item wdt:P170 ?creator. }}
             OPTIONAL {{ ?item wdt:P276 ?museum. }}
-
-            # Contar enlaces en Wikipedia en inglés como proxy de relevancia
-            OPTIONAL {{
-                ?link schema:about ?item .
-                ?link schema:isPartOf <https://en.wikipedia.org/> .
-            }}
-
+            OPTIONAL {{ ?item wdt:P18 ?image. }}
             SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
         }}
-        GROUP BY ?item ?itemLabel ?creatorLabel ?image ?museumLabel
-        ORDER BY DESC(?linkCount)
         LIMIT {limit}
         OFFSET {offset}
         """
+
         encoded_query = quote(sparql_query)
         url = f"{self.base_url}?query={encoded_query}&format=json"
 
@@ -197,8 +172,6 @@ class ExternalAPI:
         except requests.RequestException as e:
             print(f"Error al consultar Wikidata: {e}")
         return []
-
-
 
     def fetch_from_europeana(self, query, limit):
         url = f"https://api.europeana.eu/record/v2/search.json?wskey={self.europeana_api_key}&query={query}&rows={limit}"
@@ -227,115 +200,134 @@ class ExternalAPI:
             print(f"Error al consultar The Met: {e}")
         return []
 
+    def fetch_artist_data(self, artist_name):
+        sparql_query = f"""
+        SELECT ?item ?itemLabel ?itemDescription ?dateOfDeath ?sitelinks WHERE {{
+        SERVICE wikibase:mwapi {{
+            bd:serviceParam wikibase:endpoint "www.wikidata.org";
+                            wikibase:api "EntitySearch";
+                            mwapi:search "{artist_name}";
+                            mwapi:language "en".
+            ?item wikibase:apiOutputItem mwapi:item.
+            ?num wikibase:apiOrdinal true.
+        }}
+        ?item wdt:P31 wd:Q5.  # Es una persona
+        OPTIONAL {{ ?item schema:description ?itemDescription FILTER (LANG(?itemDescription) = "en") }}
+        OPTIONAL {{ ?item wdt:P570 ?dateOfDeath. }}
+        OPTIONAL {{ ?item wikibase:sitelinks ?sitelinks. }}
+        SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
+        }}
+        ORDER BY DESC(?sitelinks)
+        LIMIT 1
+        """
 
-def parse_location(location_value):
-    if not location_value:
-        return {}
-    try:
-        coords = location_value.replace("Point(", "").replace(")", "")
-        lon_str, lat_str = coords.strip().split()
-        return {
-            "lat": float(lat_str),
-            "lon": float(lon_str)
+        from urllib.parse import quote_plus
+        encoded_query = quote_plus(sparql_query)
+        url = f"{self.base_url}?query={encoded_query}&format=json"
+
+        headers = {
+            "Accept": "application/sparql-results+json",
+            "User-Agent": "MiApp/1.0 (contacto@midominio.com)"
         }
-    except Exception:
-        return {}
 
-def parse_result_wikidata(result):
-    def get_value(field):
-        return result.get(field, {}).get("value")
+        try:
+            response = requests.get(url, headers=headers)
+            if response.status_code == 200:
+                results = response.json().get("results", {}).get("bindings", [])
+                if results:
+                    r = results[0]
+                    wikidata_id = r["item"]["value"].split("/")[-1]
+                    label = r.get("itemLabel", {}).get("value")
+                    description = r.get("itemDescription", {}).get("value")
+                    date_of_death = r.get("dateOfDeath", {}).get("value")
+                    sitelinks = int(r.get("sitelinks", {}).get("value", 0))
+                    return {
+                        "wikidata_id": wikidata_id,
+                        "label": label,
+                        "description": description,
+                        "date_of_death": date_of_death,
+                        "sitelinks": sitelinks,
+                        "wikipedia_url": f"https://en.wikipedia.org/wiki/{label.replace(' ', '_')}" if label else None,
+                    }
+        except requests.RequestException as e:
+            print(f"Error buscando artista en Wikidata: {e}")
 
-    id_raw = get_value("item")
-    wikidata_id = id_raw.split("/")[-1] if id_raw else None
+        return None
 
-    museum = get_value("museumLabel")
-    if not museum:
-        museum = "Private Collection"
+    def fetch_works_by_artist(self, artist_wikidata_id, limit=50):
+        sparql_query = f"""
+        SELECT ?item ?itemLabel ?itemDescription ?sitelinks WHERE {{
+        ?item wdt:P170 wd:{artist_wikidata_id} .  # Obras cuyo creador es el artista
+        OPTIONAL {{ ?item schema:description ?itemDescription FILTER (LANG(?itemDescription) = "en") }}
+        OPTIONAL {{ ?item wikibase:sitelinks ?sitelinks }}
+        SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
+        }}
+        ORDER BY DESC(?sitelinks)
+        LIMIT {limit}
+        """
+        from urllib.parse import quote_plus
+        encoded_query = quote_plus(sparql_query)
+        url = f"{self.base_url}?query={encoded_query}&format=json"
 
+        headers = {
+            "Accept": "application/sparql-results+json",
+            "User-Agent": "MiApp/1.0 (contacto@midominio.com)"
+        }
+
+        try:
+            response = requests.get(url, headers=headers)
+            if response.status_code == 200:
+                results = response.json().get("results", {}).get("bindings", [])
+                return results
+        except requests.RequestException as e:
+            print(f"Error buscando obras por artista en Wikidata: {e}")
+        return []
+
+
+def parse_result_wikidata(item):
     return {
-        "_id": wikidata_id,
-        "external_id": wikidata_id,
-        "title": get_value("itemLabel"),
-        "author": get_value("creatorLabel"),
-        "museum": museum,
-        "image": get_value("image"),
+        "_id": item.get("item", {}).get("value", "").split("/")[-1],
+        "title": item.get("itemLabel", {}).get("value"),
+        "author": item.get("creatorLabel", {}).get("value"),
+        "museum": item.get("museumLabel", {}).get("value"),
+        "image": item.get("image", {}).get("value"),
     }
 
-def parse_result_wikidata_full(result):
-    def get_value(field):
-        return result.get(field, {}).get("value")
-
-    location_raw = get_value("location")
-    id_raw = get_value("item")
-    wikidata_id = id_raw.split("/")[-1] if id_raw else None
-
-    museum = get_value("museumLabel")
-    if not museum:
-        museum = "Private Collection"
-        location = "Unknown"
-    else:
-        location = parse_location(location_raw)
-
+def parse_result_wikidata_full(item):
     return {
-        "_id": wikidata_id,
-        "external_id": wikidata_id,
-        "title": get_value("itemLabel"),
-        "author": get_value("creatorLabel"),
-        "year": get_value("inception"),
-        "style": get_value("styleLabel"),
-        "museum": museum,
-        "location": location,
-        "medium": get_value("mediumLabel"),
-        "dimensions": get_value("dimensions"),
-        "image": get_value("image"),
-        "description": get_value("description"),
-        "tags": [],
-        "source_url": f"https://www.wikidata.org/wiki/{wikidata_id}" if wikidata_id else None,
-        "source": "wikidata"
+        "_id": item.get("item", {}).get("value", "").split("/")[-1],
+        "title": item.get("itemLabel", {}).get("value"),
+        "author": item.get("creatorLabel", {}).get("value"),
+        "museum": item.get("museumLabel", {}).get("value"),
+        "image": item.get("image", {}).get("value"),
+        "inception": item.get("inception", {}).get("value"),
+        "style": item.get("styleLabel", {}).get("value"),
+        "location": item.get("location", {}).get("value"),
+        "medium": item.get("mediumLabel", {}).get("value"),
+        "dimensions": item.get("dimensions", {}).get("value"),
+        "description": item.get("description", {}).get("value"),
     }
-
 
 def parse_result_europeana(item):
-    image = (
-        item.get("edmPreview", [None])[0] or
-        item.get("edmIsShownBy") or
-        item.get("edmIsShownAt")
-    )
     return {
         "_id": item.get("id"),
-        "external_id": item.get("id"),
-        "title": item.get("title", [""])[0] if item.get("title") else None,
-        "author": item.get("dcCreator", [""])[0] if item.get("dcCreator") else None,
-        "year": item.get("year", [""])[0] if item.get("year") else None,
-        "style": None,
-        "museum": item.get("dataProvider", [""])[0] if item.get("dataProvider") else None,
-        "location": {},
+        "title": item.get("title", [None])[0],
+        "author": item.get("dcCreator", [None])[0] if item.get("dcCreator") else None,
+        "image": item.get("edmIsShownBy"),
+        "museum": item.get("dataProvider"),
+        "description": item.get("dcDescription", [None])[0] if item.get("dcDescription") else None,
         "medium": None,
         "dimensions": None,
-        "image": image,
-        "description": item.get("dcDescription", [""])[0] if item.get("dcDescription") else None,
-        "tags": [],
-        "source_url": item.get("guid"),
-        "source": "europeana"
     }
 
-
 def parse_result_met(item):
-    image = item.get("primaryImageSmall") or item.get("primaryImage")
     return {
         "_id": str(item.get("objectID")),
-        "external_id": str(item.get("objectID")),
         "title": item.get("title"),
         "author": item.get("artistDisplayName"),
-        "year": item.get("objectDate"),
-        "style": None,
-        "museum": "The Metropolitan Museum of Art",
-        "location": {},
+        "museum": "The Met",
+        "image": item.get("primaryImage"),
+        "description": item.get("creditLine"),
         "medium": item.get("medium"),
         "dimensions": item.get("dimensions"),
-        "image": image,
-        "description": item.get("creditLine"),
-        "tags": [],
-        "source_url": item.get("objectURL"),
-        "source": "met"
     }
