@@ -77,6 +77,7 @@ class Register(Resource):
             "email": email,
             "password": hashed_password,
             "role": "user",
+            "level":"none",
             "verified": False,
             "verification_token": verification_token
         })

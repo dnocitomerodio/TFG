@@ -105,7 +105,9 @@ class ExternalAPI:
         return result
     
     def generate_artwork_description(self, title, author, base_description, user_level):
-        if user_level == "beginner":
+        if user_level == "none":
+            return base_description
+        elif user_level == "beginner":
             prompt = (
                 "Explain the following artwork in simple terms for a beginner:\n\n"
                 f"Title: {title}\n"
@@ -139,7 +141,7 @@ class ExternalAPI:
         return completion.choices[0].message.content
 
 
-    def fetch_single_art_piece(self, external_id: str):
+    def fetch_single_art_piece(self, external_id: str, user_level="none"):
         external_id = external_id.strip()
         for key, results in self.cache.items():
             if key.endswith("|True"):
@@ -188,9 +190,9 @@ class ExternalAPI:
                                 title=res.get("title", ""),
                                 author=res.get("author", ""),
                                 base_description=res["description"],
-                                user_level="expert"
+                                user_level=user_level
                             )
-                            res["description_enriched"] = enriched
+                            res["description"] = enriched
                         except Exception as e:
                             print(f"Error generating enriched description: {e}")
         except requests.RequestException as e:

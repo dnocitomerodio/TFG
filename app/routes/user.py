@@ -18,6 +18,7 @@ user_model = api.model("User", {
     "email": fields.String(required=True, description="The user's email address."),
     "password": fields.String(required=True, description="The user's password."),
     "role": fields.String(required=False, description="The user's role."),
+    "level": fields.String(required=False, description="The user's level defines the depth of the descriptions he will see."),
 })
 
 
@@ -140,3 +141,25 @@ class UpdateUserRole(Resource):
 
         log_user_action(get_jwt_identity(), f"Updated user {user_id}'s role to {new_role}")
         return {"msg": f"User {user_id} role updated to {new_role}"}, 200
+    
+@api.route("/update_level")
+class UpdateUserLevel(Resource):
+    @jwt_required()
+    @api.doc(security="Bearer Auth")
+    def put(self):
+        identity = get_jwt_identity()
+        data = request.get_json()
+        new_level = data.get("level")
+
+        if not new_level:
+            return {"msg": "New level is required"}, 400
+
+        result = mongo.db.users.update_one(
+            {"email": identity}, {"$set": {"level": new_level}}
+        )
+
+        if result.matched_count == 0:
+            return {"msg": "User not found"}, 404
+
+        log_user_action(identity, f"Updated their level to {new_level}")
+        return {"msg": f"Level updated to {new_level}"}, 200
