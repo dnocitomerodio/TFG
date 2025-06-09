@@ -21,9 +21,6 @@ class ExternalAPI:
         credential=AzureKeyCredential(os.getenv("AI_KEY")),
         )
         self.ai_model=ai_model=os.getenv("AI_MODEL")
-        print(f"AI_KEY loaded: {os.getenv('AI_KEY')}")
-        print(f"AI_URL loaded: {os.getenv('AI_URL')}")
-
 
     def fetch_art_pieces(self, query, limit=10, offset=0, expand=False):
         wikidata_raw = self.fetch_from_wikidata(query, limit, offset)
@@ -195,9 +192,9 @@ class ExternalAPI:
                             )
                             res["description_enriched"] = enriched
                         except Exception as e:
-                            print(f"Error generando descripción enriquecida: {e}")
+                            print(f"Error generating enriched description: {e}")
         except requests.RequestException as e:
-            print(f"Error al consultar Wikidata por ID: {e}")
+            print(f"Error querying Wikidata by ID: {e}")
 
         return res
 
@@ -230,7 +227,7 @@ class ExternalAPI:
             if response.status_code == 200:
                 return response.json().get("results", {}).get("bindings", [])
         except requests.RequestException as e:
-            print(f"Error al consultar Wikidata: {e}")
+            print(f"Error querying Wikidata: {e}")
         return []
 
     def fetch_from_europeana(self, query, limit):
@@ -240,7 +237,7 @@ class ExternalAPI:
             if response.status_code == 200:
                 return response.json().get("items", [])
         except requests.RequestException as e:
-            print(f"Error al consultar Europeana: {e}")
+            print(f"Error querying Europeana: {e}")
         return []
 
     def fetch_from_met(self, query, limit):
@@ -257,7 +254,7 @@ class ExternalAPI:
                         results.append(obj_response.json())
                 return results
         except requests.RequestException as e:
-            print(f"Error al consultar The Met: {e}")
+            print(f"Error querying The Met: {e}")
         return []
 
     def fetch_artist_data(self, artist_name):
@@ -304,7 +301,7 @@ class ExternalAPI:
                         "wikipedia_url": f"https://en.wikipedia.org/wiki/{label.replace(' ', '_')}" if label else None,
                     }
         except requests.RequestException as e:
-            print(f"Error buscando artista en Wikidata: {e}")
+            print(f"Error searching artist in Wikidata: {e}")
 
         return None
 
@@ -328,7 +325,7 @@ class ExternalAPI:
                 results = response.json().get("results", {}).get("bindings", [])
                 return results
         except requests.RequestException as e:
-            print(f"Error buscando obras por artista en Wikidata: {e}")
+            print(f"Error searching works by artist in Wikidata: {e}")
         return []
     
     def fetch_museums_nearby(self, latitude, longitude, radius_km=10):
@@ -375,7 +372,7 @@ class ExternalAPI:
                     })
                 return museums
         except requests.RequestException as e:
-            print(f"Error buscando museos cercanos en Wikidata: {e}")
+            print(f"Error searching nearby museums in Wikidata: {e}")
         return []
 
     def fetch_artworks_in_museum(self, museum_wikidata_id, limit=100):
@@ -401,7 +398,7 @@ class ExternalAPI:
                 results = response.json().get("results", {}).get("bindings", [])
                 return results
         except requests.RequestException as e:
-            print(f"Error buscando obras en el museo en Wikidata: {e}")
+            print(f"Error searching artworks in museum in Wikidata: {e}")
         return []
 
     
