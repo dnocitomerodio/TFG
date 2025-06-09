@@ -1,7 +1,7 @@
 import requests
 import os
 from dotenv import load_dotenv
-from urllib.parse import quote
+from urllib.parse import quote, quote_plus
 
 load_dotenv()
 
@@ -10,6 +10,9 @@ class ExternalAPI:
         self.base_url = base_url
         self.europeana_api_key = os.getenv("EUROPEANA_API_KEY")
         self.cache = {}
+        self.headers = {
+            "User-Agent": "ArtExplorer/1.0 (contact@example.com)"
+        }
 
     def fetch_art_pieces(self, query, limit=10, offset=0, expand=False):
         wikidata_raw = self.fetch_from_wikidata(query, limit, offset)
@@ -126,7 +129,7 @@ class ExternalAPI:
         url = f"{self.base_url}?query={encoded_query}&format=json"
 
         try:
-            response = requests.get(url)
+            response = requests.get(url, headers=self.headers)
             if response.status_code == 200:
                 results = response.json().get("results", {}).get("bindings", [])
                 if results:
@@ -152,7 +155,7 @@ class ExternalAPI:
                 ?item wikibase:apiOutputItem mwapi:item.
                 ?num wikibase:apiOrdinal true.
             }}
-            ?item wdt:P31 wd:Q3305213.  # Instancia de obra de arte
+            ?item wdt:P31 wd:Q3305213.
             OPTIONAL {{ ?item wdt:P170 ?creator. }}
             OPTIONAL {{ ?item wdt:P276 ?museum. }}
             OPTIONAL {{ ?item wdt:P18 ?image. }}
@@ -166,7 +169,7 @@ class ExternalAPI:
         url = f"{self.base_url}?query={encoded_query}&format=json"
 
         try:
-            response = requests.get(url)
+            response = requests.get(url, headers=self.headers)
             if response.status_code == 200:
                 return response.json().get("results", {}).get("bindings", [])
         except requests.RequestException as e:
@@ -176,7 +179,7 @@ class ExternalAPI:
     def fetch_from_europeana(self, query, limit):
         url = f"https://api.europeana.eu/record/v2/search.json?wskey={self.europeana_api_key}&query={query}&rows={limit}"
         try:
-            response = requests.get(url)
+            response = requests.get(url, headers=self.headers)
             if response.status_code == 200:
                 return response.json().get("items", [])
         except requests.RequestException as e:
@@ -186,13 +189,13 @@ class ExternalAPI:
     def fetch_from_met(self, query, limit):
         search_url = f"https://collectionapi.metmuseum.org/public/collection/v1/search?q={query}"
         try:
-            search_response = requests.get(search_url)
+            search_response = requests.get(search_url, headers=self.headers)
             if search_response.status_code == 200:
                 object_ids = search_response.json().get("objectIDs", [])[:limit]
                 results = []
                 for obj_id in object_ids:
                     obj_url = f"https://collectionapi.metmuseum.org/public/collection/v1/objects/{obj_id}"
-                    obj_response = requests.get(obj_url)
+                    obj_response = requests.get(obj_url, headers=self.headers)
                     if obj_response.status_code == 200:
                         results.append(obj_response.json())
                 return results
@@ -211,7 +214,7 @@ class ExternalAPI:
             ?item wikibase:apiOutputItem mwapi:item.
             ?num wikibase:apiOrdinal true.
         }}
-        ?item wdt:P31 wd:Q5.  # Es una persona
+        ?item wdt:P31 wd:Q5.
         OPTIONAL {{ ?item schema:description ?itemDescription FILTER (LANG(?itemDescription) = "en") }}
         OPTIONAL {{ ?item wdt:P570 ?dateOfDeath. }}
         OPTIONAL {{ ?item wikibase:sitelinks ?sitelinks. }}
@@ -221,17 +224,11 @@ class ExternalAPI:
         LIMIT 1
         """
 
-        from urllib.parse import quote_plus
         encoded_query = quote_plus(sparql_query)
         url = f"{self.base_url}?query={encoded_query}&format=json"
 
-        headers = {
-            "Accept": "application/sparql-results+json",
-            "User-Agent": "MiApp/1.0 (contacto@midominio.com)"
-        }
-
         try:
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=self.headers)
             if response.status_code == 200:
                 results = response.json().get("results", {}).get("bindings", [])
                 if results:
@@ -257,7 +254,7 @@ class ExternalAPI:
     def fetch_works_by_artist(self, artist_wikidata_id, limit=50):
         sparql_query = f"""
         SELECT ?item ?itemLabel ?itemDescription ?sitelinks WHERE {{
-        ?item wdt:P170 wd:{artist_wikidata_id} .  # Obras cuyo creador es el artista
+        ?item wdt:P170 wd:{artist_wikidata_id} .
         OPTIONAL {{ ?item schema:description ?itemDescription FILTER (LANG(?itemDescription) = "en") }}
         OPTIONAL {{ ?item wikibase:sitelinks ?sitelinks }}
         SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
@@ -265,25 +262,92 @@ class ExternalAPI:
         ORDER BY DESC(?sitelinks)
         LIMIT {limit}
         """
-        from urllib.parse import quote_plus
         encoded_query = quote_plus(sparql_query)
         url = f"{self.base_url}?query={encoded_query}&format=json"
 
-        headers = {
-            "Accept": "application/sparql-results+json",
-            "User-Agent": "MiApp/1.0 (contacto@midominio.com)"
-        }
-
         try:
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=self.headers)
             if response.status_code == 200:
                 results = response.json().get("results", {}).get("bindings", [])
                 return results
         except requests.RequestException as e:
             print(f"Error buscando obras por artista en Wikidata: {e}")
         return []
+    
+    def fetch_museums_nearby(self, latitude, longitude, radius_km=10):
+        sparql_query = f"""
+        SELECT DISTINCT ?item ?itemLabel ?coord ?lat ?lon ?dist ?image WHERE {{
+        SERVICE wikibase:around {{
+            ?item wdt:P625 ?coord .
+            bd:serviceParam wikibase:center "Point({longitude} {latitude})"^^geo:wktLiteral .
+            bd:serviceParam wikibase:radius "{radius_km}" .
+            bd:serviceParam wikibase:distance ?dist .
+        }}
+        ?item wdt:P31/wdt:P279* wd:Q33506 .
+        OPTIONAL {{ ?item wdt:P18 ?image. }}
+        ?item p:P625 ?coordinate .
+        ?coordinate psv:P625 ?coordinate_node .
+        ?coordinate_node wikibase:geoLatitude ?lat .
+        ?coordinate_node wikibase:geoLongitude ?lon .
+        SERVICE wikibase:label {{ bd:serviceParam wikibase:language "es,en". }}
+        }}
+        ORDER BY ASC(?dist)
+        """
 
+        encoded_query = quote_plus(sparql_query)
+        url = f"{self.base_url}?query={encoded_query}&format=json"
 
+        try:
+            response = requests.get(url, headers=self.headers)
+            if response.status_code == 200:
+                results = response.json().get("results", {}).get("bindings", [])
+                museums = []
+                for r in results:
+                    item_uri = r.get("item", {}).get("value", "")
+                    qid = item_uri.split("/")[-1]
+                    image_url = r.get("image", {}).get("value") if "image" in r else None
+
+                    museums.append({
+                        "id": qid,
+                        "name": r.get("itemLabel", {}).get("value", qid),
+                        "latitude": float(r.get("lat", {}).get("value", 0)),
+                        "longitude": float(r.get("lon", {}).get("value", 0)),
+                        "distance_km": float(r.get("dist", {}).get("value", 0)),
+                        "image": image_url,
+                        "url": f"https://www.wikidata.org/wiki/{qid}"
+                    })
+                return museums
+        except requests.RequestException as e:
+            print(f"Error buscando museos cercanos en Wikidata: {e}")
+        return []
+
+    def fetch_artworks_in_museum(self, museum_wikidata_id, limit=100):
+        sparql_query = f"""
+        SELECT ?item ?itemLabel ?itemDescription ?sitelinks ?creatorLabel ?image WHERE {{
+            ?item wdt:P31/wdt:P279* wd:Q838948 .
+            ?item wdt:P276 wd:{museum_wikidata_id} .
+            OPTIONAL {{ ?item schema:description ?itemDescription FILTER (LANG(?itemDescription) = "en") }}
+            OPTIONAL {{ ?item wdt:P170 ?creator. }}
+            OPTIONAL {{ ?item wdt:P18 ?image. }}
+            OPTIONAL {{ ?item wikibase:sitelinks ?sitelinks }}
+            SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
+        }}
+        ORDER BY DESC(?sitelinks)
+        LIMIT {limit}
+        """
+        encoded_query = quote_plus(sparql_query)
+        url = f"{self.base_url}?query={encoded_query}&format=json"
+
+        try:
+            response = requests.get(url, headers=self.headers)
+            if response.status_code == 200:
+                results = response.json().get("results", {}).get("bindings", [])
+                return results
+        except requests.RequestException as e:
+            print(f"Error buscando obras en el museo en Wikidata: {e}")
+        return []
+
+    
 def parse_result_wikidata(item):
     return {
         "_id": item.get("item", {}).get("value", "").split("/")[-1],

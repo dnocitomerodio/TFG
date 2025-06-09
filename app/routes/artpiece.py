@@ -219,3 +219,56 @@ class ArtistSearch(Resource):
             "artist": artist_data,
             "artworks": formatted_artworks
         }, 200
+
+@api.route("/nearby_museums")
+class MuseumsNearby(Resource):
+    @jwt_required()
+    @api.doc(security="Bearer Auth", params={
+        "lat": "Latitude (e.g., 43.2630)",
+        "lon": "Longitude (e.g., -2.9350)",
+        "radius_km": "Search radius in kilometers (e.g., 10)"
+    })
+    def get(self):
+        identity = get_jwt_identity()
+        lat = request.args.get("lat")
+        lon = request.args.get("lon")
+        radius_km = request.args.get("radius_km", "5")
+
+        if not lat or not lon:
+            return {"msg": "Latitude and longitude are required"}, 400
+
+        try:
+            results = external_api.fetch_museums_nearby(lat, lon, radius_km)
+            log_user_action(identity, f"Fetched museums near coordinates ({lat}, {lon}) within {radius_km} km")
+            return results, 200
+        except Exception as e:
+            return {"msg": f"Error retrieving museums: {str(e)}"}, 500
+
+
+@api.route("/museum_works/<string:museum_id>")
+class WorksByMuseum(Resource):
+    @jwt_required()
+    @api.doc(security="Bearer Auth", params={"museum_id": "Wikidata ID of the museum (e.g., Q160112)"})
+    def get(self, museum_id):
+        identity = get_jwt_identity()
+
+        try:
+            results = external_api.fetch_artworks_in_museum(museum_id)
+            formatted = []
+            for item in results:
+                uri = item.get("item", {}).get("value", "")
+                external_id = uri.split("/")[-1] if uri else ""
+                formatted.append({
+                    "external_id": external_id,
+                    "title": item.get("itemLabel", {}).get("value", ""),
+                    "author": item.get("creatorLabel", {}).get("value", ""),
+                    "description": item.get("itemDescription", {}).get("value", ""),
+                    "image": item.get("image", {}).get("value", ""),
+                    "sitelinks": int(item.get("sitelinks", {}).get("value", 0)) if "sitelinks" in item else 0,
+                    "source_url": f"https://www.wikidata.org/wiki/{external_id}"
+                })
+
+            log_user_action(identity, f"Fetched artworks for museum {museum_id}")
+            return {"museum_id": museum_id, "artworks": formatted}, 200
+        except Exception as e:
+            return {"msg": f"Error retrieving museum artworks: {str(e)}"}, 500
