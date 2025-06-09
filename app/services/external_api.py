@@ -1,5 +1,8 @@
 import requests
 import os
+from azure.ai.inference import ChatCompletionsClient
+from azure.ai.inference.models import SystemMessage, UserMessage
+from azure.core.credentials import AzureKeyCredential
 from dotenv import load_dotenv
 from urllib.parse import quote, quote_plus
 
@@ -13,6 +16,14 @@ class ExternalAPI:
         self.headers = {
             "User-Agent": "Musaica ArtExplorer/1.0 (musaicanotificaciones@proton.me)"
         }
+        self.client = ChatCompletionsClient(
+        endpoint=os.getenv("AI_URL"),
+        credential=AzureKeyCredential(os.getenv("AI_KEY")),
+        )
+        self.ai_model=ai_model=os.getenv("AI_MODEL")
+        print(f"AI_KEY loaded: {os.getenv('AI_KEY')}")
+        print(f"AI_URL loaded: {os.getenv('AI_URL')}")
+
 
     def fetch_art_pieces(self, query, limit=10, offset=0, expand=False):
         wikidata_raw = self.fetch_from_wikidata(query, limit, offset)
@@ -95,8 +106,44 @@ class ExternalAPI:
                     break
 
         return result
+    
+    def generate_artwork_description(self, title, author, base_description, user_level):
+        if user_level == "beginner":
+            prompt = (
+                "Explain the following artwork in simple terms for a beginner:\n\n"
+                f"Title: {title}\n"
+                f"Author: {author}\n"
+                f"Description: {base_description}"
+            )
+        elif user_level == "expert":
+            prompt = (
+                "Explain the following artwork with detailed technical and historical insights for an expert:\n\n"
+                f"Title: {title}\n"
+                f"Author: {author}\n"
+                f"Description: {base_description}"
+            )
+        else:
+            prompt = (
+                "Develop and enrich the following artwork description:\n\n"
+                f"Title: {title}\n"
+                f"Author: {author}\n"
+                f"Description: {base_description}"
+            )
+
+        completion = self.client.complete(
+            messages=[
+                    SystemMessage("You are an art expert how provides descriptions and explanations."),
+                    UserMessage(prompt),  
+            ], model=self.ai_model,
+            temperature=1.0,
+            top_p=1.0,
+            max_tokens=1000
+        )
+        return completion.choices[0].message.content
+
 
     def fetch_single_art_piece(self, external_id: str):
+        external_id = external_id.strip()
         for key, results in self.cache.items():
             if key.endswith("|True"):
                 for result in results:
@@ -138,11 +185,21 @@ class ExternalAPI:
                         res["museum"] = "Private Collection"
                     if not res.get("location"):
                         res["location"] = "Unknown"
-                    return res
+                    if res.get("description"):
+                        try:
+                            enriched = self.generate_artwork_description(
+                                title=res.get("title", ""),
+                                author=res.get("author", ""),
+                                base_description=res["description"],
+                                user_level="expert"
+                            )
+                            res["description_enriched"] = enriched
+                        except Exception as e:
+                            print(f"Error generando descripción enriquecida: {e}")
         except requests.RequestException as e:
             print(f"Error al consultar Wikidata por ID: {e}")
 
-        return None
+        return res
 
     def fetch_from_wikidata(self, query, limit, offset=0):
         sparql_query = f"""
