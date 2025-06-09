@@ -11,7 +11,7 @@ class ExternalAPI:
         self.europeana_api_key = os.getenv("EUROPEANA_API_KEY")
         self.cache = {}
         self.headers = {
-            "User-Agent": "ArtExplorer/1.0 (contact@example.com)"
+            "User-Agent": "Musaica ArtExplorer/1.0 (musaicanotificaciones@proton.me)"
         }
 
     def fetch_art_pieces(self, query, limit=10, offset=0, expand=False):
