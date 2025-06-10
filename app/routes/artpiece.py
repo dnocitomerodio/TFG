@@ -80,9 +80,11 @@ class ExternalArtPieceDetail(Resource):
     @api.doc(security="Bearer Auth")
     def get(self, external_id):
         identity = get_jwt_identity()
+        data = request.get_json(silent=True) or {}
         user = mongo.db.users.find_one({"email": identity})
-        user_level = user.get("level", "none")
-        result = external_api.fetch_single_art_piece(external_id, user_level)
+        default_user_level = user.get("level", "none")
+        level = data.get("level", default_user_level)
+        result = external_api.fetch_single_art_piece(external_id, level)
         if not result:
             return {"msg": "Art piece not found"}, 404
 
