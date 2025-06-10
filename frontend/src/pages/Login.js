@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
+import { jwtDecode } from "jwt-decode";
 
 const Login = () => {
   const [formData, setFormData] = useState({ email: "", password: "" });
@@ -11,23 +12,37 @@ const Login = () => {
   useEffect(() => {
     const verifyAuthentication = async () => {
       const token = localStorage.getItem("token");
-      const userId = localStorage.getItem("userId");
 
-      if (token && userId) {
+      if (token) {
         try {
+          if (typeof token !== "string" || token.split(".").length !== 3) {
+            throw new Error("Invalid token format");
+          }
+
+          const decoded = jwtDecode(token);
+          const email = decoded.identity;
+
           const response = await axios.post(
-            "http://localhost:8080/api/auth/validate",
-            { userId },
-            { headers: { Authorization: `Bearer ${token}` } }
+            "http://localhost:5000/auth/refresh",
+            {},
+            {
+              headers: {
+                Authorization: `Bearer ${localStorage.getItem("refreshToken")}`,
+              },
+            }
           );
 
           if (response.status === 200) {
+            localStorage.setItem("token", response.data.access_token);
             setIsAuthenticated(true);
-            setMessage(`Welcome back, ${response.data.username}!`);
+            setMessage(`Welcome back, ${email}!`);
           }
         } catch (error) {
-          console.error("Token validation failed");
+          console.error("Token validation failed:", error.message);
           setIsAuthenticated(false);
+          localStorage.removeItem("token");
+          localStorage.removeItem("refreshToken");
+          setMessage("Session expired. Please log in again.");
         }
       }
     };
@@ -43,28 +58,52 @@ const Login = () => {
     e.preventDefault();
     try {
       const response = await axios.post(
-        "http://localhost:8080/api/auth/login",
+        "http://localhost:5000/auth/login",
         formData
       );
 
-      localStorage.setItem("token", response.data.token);
-      localStorage.setItem("userId", response.data.user._id);
+      if (!response.data.access_token || !response.data.refresh_token) {
+        throw new Error("Invalid login response: Missing tokens");
+      }
 
-      setMessage(`Welcome, ${response.data.user.username}!`);
+      localStorage.setItem("token", response.data.access_token);
+      localStorage.setItem("refreshToken", response.data.refresh_token);
+
+      const decoded = jwtDecode(response.data.access_token);
+      const email = decoded.identity;
+
+      setMessage(`Welcome, ${email}!`);
+      setIsAuthenticated(true);
       navigate("/");
     } catch (error) {
-      setMessage(error.response?.data?.message || "An error occurred.");
+      console.error("Login error:", error);
+      setMessage(
+        error.response?.data?.msg || "An error occurred during login."
+      );
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("userId");
-    setIsAuthenticated(false);
-    setMessage("");
+  const handleLogout = async () => {
+    try {
+      await axios.post(
+        "http://localhost:5000/auth/logout",
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("refreshToken")}`,
+          },
+        }
+      );
+    } catch (error) {
+      console.error("Logout failed:", error);
+    } finally {
+      localStorage.removeItem("token");
+      localStorage.removeItem("refreshToken");
+      setIsAuthenticated(false);
+      setMessage("");
+    }
   };
 
-  // Si ya estás autenticado, muestra el botón de logout
   if (isAuthenticated) {
     return (
       <div className="d-flex justify-content-center align-items-center vh-100 bg-light">
@@ -79,7 +118,6 @@ const Login = () => {
     );
   }
 
-  // Página de inicio de sesión
   return (
     <div className="d-flex justify-content-center align-items-center vh-100 bg-light">
       <div className="card shadow p-4" style={{ width: "400px" }}>

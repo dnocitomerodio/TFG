@@ -54,7 +54,7 @@ def create_app():
         version="1.0",
         title="Musaica API",
         description="Documentation of the API for the management of users and artworks",
-        doc="/"
+        doc="/documentation"
     )
     
     from .routes.user import api as user_ns
