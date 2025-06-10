@@ -276,3 +276,92 @@ class WorksByMuseum(Resource):
             return {"museum_id": museum_id, "artworks": formatted}, 200
         except Exception as e:
             return {"msg": f"Error retrieving museum artworks: {str(e)}"}, 500
+
+@api.route("/recommendations")
+class ArtPieceRecommendations(Resource):
+    @jwt_required()
+    @api.doc(security="Bearer Auth", params={
+        "level": "Optional user level override (none, beginner, expert)",
+        "offset": "Number of results to skip for pagination (default: 0)"
+    })
+    def get(self):
+        identity = get_jwt_identity()
+        user = mongo.db.users.find_one({"email": identity})
+        if not user:
+            return {"msg": "User not found"}, 404
+
+        default_user_level = user.get("level", "none")
+        level = request.args.get("level", default_user_level)
+        if level not in ["none", "beginner", "expert"]:
+            return {"msg": "Invalid level parameter. Use 'none', 'beginner', or 'expert'"}, 400
+
+        try:
+            offset = int(request.args.get("offset", 0))
+            if offset < 0:
+                return {"msg": "Offset must be non-negative"}, 400
+        except ValueError:
+            return {"msg": "Invalid offset parameter"}, 400
+
+        external_ids = user.get("artpieces", [])
+
+        try:
+            raw_results = external_api.fetch_recommendations_from_wikidata(external_ids, level, offset)
+
+            recommendations = []
+            for result in raw_results:
+                external_id = result.get("item", {}).get("value", "").split("/")[-1]
+                title = result.get("itemLabel", {}).get("value", "")
+                if not title or title == external_id:
+                    title = f"Untitled ({external_id})"
+                image = result.get("image", {}).get("value", "") or result.get("relatedImage", {}).get("value", "") or ""
+                if image.startswith("commons:"):
+                    image = f"http://commons.wikimedia.org/wiki/File:{image.replace('commons:', '')}"
+                if image and not image.startswith(("http://commons.wikimedia.org/", "https://commons.wikimedia.org/")):
+                    image = ""
+                recommendations.append({
+                    "_id": external_id,
+                    "title": title,
+                    "author": result.get("creatorLabel", {}).get("value", "") or "Unknown artist",
+                    "description": result.get("description", {}).get("value", "") or "No description available",
+                    "image": image,
+                    "museum": result.get("museumLabel", {}).get("value", "") or "Unknown museum",
+                    "style": result.get("styleLabel", {}).get("value", "") or "Unknown style",
+                    "sitelinks": int(result.get("sitelinks", {}).get("value", 0)) if result.get("sitelinks") else 0
+                })
+
+            if level == "beginner":
+                recommendations = [r for r in recommendations if r.get("sitelinks", 0) > 5]
+            elif level == "expert":
+                recommendations = [r for r in recommendations if r.get("sitelinks", 0) <= 5 and r.get("sitelinks", 0) > 0]
+
+            seen = set()
+            unique_recommendations = []
+            for rec in recommendations:
+                if rec["_id"] not in seen:
+                    seen.add(rec["_id"])
+                    unique_recommendations.append(rec)
+
+            page_size = 10
+            start = offset
+            end = start + page_size
+            paginated_recommendations = unique_recommendations[start:end]
+
+            formatted = [
+                {
+                    "external_id": rec.get("_id", ""),
+                    "title": rec.get("title", "") or f"Untitled ({rec.get('_id', '')})",
+                    "author": rec.get("author", "") or "Unknown artist",
+                    "description": rec.get("description", "") or "No description available",
+                    "image": rec.get("image", "") or "",
+                    "museum": rec.get("museum", "") or "Unknown museum",
+                    "style": rec.get("style", "") or "Unknown style",
+                    "source_url": f"https://www.wikidata.org/wiki/{rec.get('_id', '')}" if rec.get('_id') else ""
+                }
+                for rec in paginated_recommendations
+                if rec.get("_id")
+            ]
+
+            log_user_action(identity, f"Fetched recommendations with level={level}, external_ids={external_ids}, offset={offset}")
+            return formatted, 200
+        except Exception as e:
+            return {"msg": f"Error retrieving recommendations: {str(e)}"}, 500

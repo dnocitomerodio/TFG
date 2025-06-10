@@ -402,6 +402,64 @@ class ExternalAPI:
         except requests.RequestException as e:
             print(f"Error searching artworks in museum in Wikidata: {e}")
         return []
+    
+    def fetch_recommendations_from_wikidata(self, favorites, level, offset=0):
+        if not favorites or offset < 0:
+            return []
+
+        if offset > 100:
+            print(f"Warning: Large offset ({offset}) may slow down query performance")
+
+        results = []
+        for favorite in favorites:
+            sparql_query = f"""
+            SELECT DISTINCT ?item ?itemLabel ?creatorLabel ?description ?image ?relatedImage ?museumLabel (SAMPLE(?styleLabel) AS ?styleLabel) ?sitelinks
+            WHERE {{
+              {{
+                ?item wdt:P170 wd:Q5593 .
+              }} UNION {{
+                ?item wdt:P135 ?style .
+                wd:{favorite} wdt:P135 ?style .
+              }} UNION {{
+                ?item wdt:P195 wd:Q460889 .
+              }}
+              ?item wdt:P31 wd:Q3305213 .
+              ?item wdt:P170 ?creator .
+              ?item wdt:P195 ?museum .
+              FILTER (?item != wd:{favorite})
+              OPTIONAL {{
+                VALUES ?styleProp {{ wdt:P135 wdt:P136 }}
+                ?item ?styleProp ?style .
+                ?style rdfs:label ?styleLabel . FILTER(LANG(?styleLabel) = "en")
+              }}
+              OPTIONAL {{ ?item wdt:P18 ?image . }}
+              OPTIONAL {{ ?item wdt:P6802 ?relatedImage . }}
+              OPTIONAL {{ ?item schema:description ?description . FILTER(LANG(?description) = "en") }}
+              OPTIONAL {{ ?item wikibase:sitelinks ?sitelinks . }}
+              SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". 
+                ?item rdfs:label ?itemLabel .
+                ?creator rdfs:label ?creatorLabel .
+                ?museum rdfs:label ?museumLabel .
+              }}
+            }}
+            GROUP BY ?item ?itemLabel ?creatorLabel ?description ?image ?relatedImage ?museumLabel ?sitelinks
+            ORDER BY DESC(?sitelinks)
+            LIMIT 50
+            """
+            encoded_query = quote_plus(sparql_query)
+            url = f"{self.base_url}?query={encoded_query}&format=json"
+
+            try:
+                response = requests.get(url, headers=self.headers)
+                if response.status_code == 200:
+                    query_results = response.json().get("results", {}).get("bindings", [])
+                    results.extend(query_results)
+                else:
+                    print(f"Error: HTTP {response.status_code} for favorite {favorite}")
+            except requests.RequestException as e:
+                print(f"Error fetching recommendations from Wikidata for favorite {favorite}: {e}")
+
+        return results
 
     
 def parse_result_wikidata(item):
