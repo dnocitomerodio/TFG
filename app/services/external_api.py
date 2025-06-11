@@ -153,12 +153,13 @@ class ExternalAPI:
                         return result
 
         query = f"""
-        SELECT ?item ?itemLabel ?creatorLabel ?image ?inception ?styleLabel ?museumLabel ?location ?mediumLabel ?dimensions ?description
+        SELECT ?item ?itemLabel ?creatorLabel ?image ?relatedImage ?inception ?styleLabel ?museumLabel ?location ?mediumLabel ?dimensions ?description
         WHERE {{
             BIND(wd:{external_id} AS ?item)
             OPTIONAL {{ ?item rdfs:label ?itemLabel FILTER (lang(?itemLabel) = "en") }}
             OPTIONAL {{ ?item wdt:P170 ?creator. }}
             OPTIONAL {{ ?item wdt:P18 ?image. }}
+            OPTIONAL {{ ?item wdt:P6802 ?relatedImage. }}
             OPTIONAL {{ ?item wdt:P571 ?inception. }}
             OPTIONAL {{ ?item wdt:P135 ?style. }}
             OPTIONAL {{ ?item wdt:P276 ?museum. }}
@@ -466,31 +467,44 @@ class ExternalAPI:
         return results
 
 def parse_result_wikidata(item):
-    image = item.get("image", {}).get("value", "") or item.get("relatedImage", {}).get("value", "")
-    if image.startswith("commons:"):
-        image = f"https://commons.wikimedia.org/wiki/File:{image.replace('commons:', '')}"
+    title = item.get("itemLabel", {}).get("value", "")
+    artist = clean_field(item.get("creatorLabel", {}).get("value", ""))
+    image = fetch_image_with_google_cse(
+        item.get("image", {}).get("value", ""),
+        item.get("relatedImage", {}).get("value", ""),
+        title=title,
+        artist=artist
+    )
     return {
         "external_id": item.get("item", {}).get("value", "").split("/")[-1],
-        "title": item.get("itemLabel", {}).get("value"),
-        "author": clean_field(item.get("creatorLabel", {}).get("value")),
-        "museum": clean_field(item.get("museumLabel", {}).get("value")),
-        "image": image if image else None,
+        "title": title,
+        "author": artist,
+        "museum": clean_field(item.get("museumLabel", {}).get("value", "")),
+        "image": image,
     }
 
 def parse_result_wikidata_full(item):
+    title = item.get("itemLabel", {}).get("value", "")
+    artist = clean_field(item.get("creatorLabel", {}).get("value", ""))
     return {
         "external_id": item.get("item", {}).get("value", "").split("/")[-1],
-        "title": item.get("itemLabel", {}).get("value"),
-        "author": clean_field(item.get("creatorLabel", {}).get("value")),
-        "museum": clean_field(item.get("museumLabel", {}).get("value")),
-        "image": item.get("image", {}).get("value"),
-        "inception": item.get("inception", {}).get("value"),
-        "style": item.get("styleLabel", {}).get("value"),
-        "location": item.get("location", {}).get("value"),
-        "medium": item.get("mediumLabel", {}).get("value"),
-        "dimensions": item.get("dimensions", {}).get("value"),
-        "description": item.get("description", {}).get("value"),
+        "title": title,
+        "author": artist,
+        "museum": clean_field(item.get("museumLabel", {}).get("value", "")),
+        "image": fetch_image_with_google_cse(
+            item.get("image", {}).get("value", ""),
+            item.get("relatedImage", {}).get("value", ""),
+            title=title,
+            artist=artist
+        ),
+        "inception": item.get("inception", {}).get("value", ""),
+        "style": item.get("styleLabel", {}).get("value", ""),
+        "location": item.get("location", {}).get("value", ""),
+        "medium": item.get("mediumLabel", {}).get("value", ""),
+        "dimensions": item.get("dimensions", {}).get("value", ""),
+        "description": item.get("description", {}).get("value", ""),
     }
+
 
 def parse_result_europeana(item):
     return {
@@ -520,3 +534,39 @@ def clean_field(value):
         if isinstance(value, str) and (value.startswith("http://") or value.startswith("https://")):
             return "Unknown"
         return value
+
+def fetch_image_with_google_cse(image, related_image=None, title=None, artist=None):
+    img = image or related_image or ""
+    if img.startswith("commons:"):
+        img = f"https://commons.wikimedia.org/wiki/File:{img.replace('commons:', '')}"
+    if img:
+        print(f"Using existing image: {img}")
+        return img
+
+    if title and artist:
+        cse_id = os.getenv("GOOGLE_CSE_ID")
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not cse_id or not api_key:
+            print("Google CSE credentials missing; using placeholder.")
+            return "https://via.placeholder.com/200x200.png?text=No+Image"
+
+        query = f"{title} {artist} site:en.wikipedia.org"
+        url = f"https://www.googleapis.com/customsearch/v1?key={api_key}&cx={cse_id}&q={quote(query)}&searchType=image&num=1&safe=active"
+
+        try:
+            response = requests.get(url, headers={"User-Agent": "Musaica ArtExplorer/1.0"})
+            response.raise_for_status()
+            results = response.json().get("items", [])
+            if results and "link" in results[0]:
+                print(f"Found image via Google CSE for query: {query}, link: {results[0]['link']}")
+                return results[0]["link"]
+            print(f"No image found via Google CSE for query: {query}")
+        except requests.HTTPError as e:
+            print(f"Google CSE API HTTP error: {e}, response: {e.response.text if e.response else 'No response'}")
+        except requests.RequestException as e:
+            print(f"Google CSE API request error: {e}")
+        except ValueError as e:
+            print(f"Invalid Google CSE response: {e}")
+
+        print(f"Using placeholder for title={title}, artist={artist}")
+    return "https://picsum.photos/300/200.jpg"

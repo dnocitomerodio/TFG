@@ -7,6 +7,8 @@ const Search = () => {
   const [results, setResults] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
   const [offset, setOffset] = useState(0);
+  const [searchOffset, setSearchOffset] = useState(0);
+  const [searchPage, setSearchPage] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const pageSize = 10;
@@ -66,8 +68,8 @@ const Search = () => {
     }
   };
 
-  const handleSearch = async (e) => {
-    e.preventDefault();
+  const handleSearch = async (e, offset = 0) => {
+    if (e) e.preventDefault();
     if (!query.trim()) {
       setError("Please enter a search term.");
       return;
@@ -79,8 +81,8 @@ const Search = () => {
         params: {
           query,
           limit: pageSize,
-          offset: 0,
-          expand: true, // Changed to true to include more fields like image
+          offset: offset,
+          expand: true,
         },
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
@@ -125,6 +127,18 @@ const Search = () => {
       direction === "next" ? offset + pageSize : Math.max(offset - pageSize, 0);
     setOffset(newOffset);
     fetchRecommendations(newOffset);
+  };
+
+  const handleSearchPagination = (direction) => {
+    const newOffset =
+      direction === "next"
+        ? searchOffset + pageSize
+        : Math.max(searchOffset - pageSize, 0);
+    setSearchOffset(newOffset);
+    setSearchPage(
+      direction === "next" ? searchPage + 1 : Math.max(searchPage - 1, 1)
+    );
+    handleSearch(null, newOffset);
   };
 
   const handleOtherSearch = (type) => {
@@ -234,6 +248,22 @@ const Search = () => {
                 </div>
               </div>
             ))}
+          </div>
+          <div className="d-flex justify-content-between">
+            <button
+              className="btn btn-secondary"
+              onClick={() => handleSearchPagination("prev")}
+              disabled={searchOffset === 0 || isLoading}
+            >
+              Previous
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => handleSearchPagination("next")}
+              disabled={results.length < pageSize || isLoading}
+            >
+              Next
+            </button>
           </div>
         </>
       ) : (
