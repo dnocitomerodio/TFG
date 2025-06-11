@@ -45,7 +45,7 @@ def create_app():
 
     google_bp = make_google_blueprint(
         scope=["openid", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"],
-        redirect_to="auth.google_login_callback"
+        redirect_to="auth_google_callback"
     )
     app.register_blueprint(google_bp, url_prefix="/auth/")
 

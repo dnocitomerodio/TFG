@@ -7,12 +7,12 @@ const Login = () => {
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [message, setMessage] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     const verifyAuthentication = async () => {
       const token = localStorage.getItem("token");
-
       if (token) {
         try {
           if (typeof token !== "string" || token.split(".").length !== 3) {
@@ -20,7 +20,7 @@ const Login = () => {
           }
 
           const decoded = jwtDecode(token);
-          const email = decoded.identity;
+          const email = decoded.identity || decoded.sub;
 
           const response = await axios.post(
             "http://localhost:5000/auth/refresh",
@@ -56,11 +56,13 @@ const Login = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setIsLoading(true);
     try {
       const response = await axios.post(
         "http://localhost:5000/auth/login",
         formData
       );
+      console.log("Login response:", response.data);
 
       if (!response.data.access_token || !response.data.refresh_token) {
         throw new Error("Invalid login response: Missing tokens");
@@ -70,7 +72,8 @@ const Login = () => {
       localStorage.setItem("refreshToken", response.data.refresh_token);
 
       const decoded = jwtDecode(response.data.access_token);
-      const email = decoded.identity;
+      console.log("Decoded login token:", decoded);
+      const email = decoded.identity || decoded.sub;
 
       setMessage(`Welcome, ${email}!`);
       setIsAuthenticated(true);
@@ -80,7 +83,14 @@ const Login = () => {
       setMessage(
         error.response?.data?.msg || "An error occurred during login."
       );
+    } finally {
+      setIsLoading(false);
     }
+  };
+
+  const handleGoogleSignIn = () => {
+    setIsLoading(true);
+    window.location.href = "http://localhost:5000/auth/google";
   };
 
   const handleLogout = async () => {
@@ -135,6 +145,7 @@ const Login = () => {
               value={formData.email}
               onChange={handleChange}
               required
+              disabled={isLoading}
             />
           </div>
           <div className="mb-3">
@@ -149,13 +160,36 @@ const Login = () => {
               value={formData.password}
               onChange={handleChange}
               required
+              disabled={isLoading}
             />
           </div>
-          <button type="submit" className="btn btn-success w-100">
-            Login
+          <button
+            type="submit"
+            className="btn btn-success w-100 mb-2"
+            disabled={isLoading}
+          >
+            {isLoading ? "Logging in..." : "Login"}
+          </button>
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            className="btn btn-primary w-100"
+            disabled={isLoading}
+          >
+            {isLoading ? "Processing..." : "Sign in with Google"}
           </button>
         </form>
-        {message && <p className="text-center text-danger mt-3">{message}</p>}
+        {message && (
+          <p
+            className={`text-center mt-3 ${
+              message.includes("error") || message.includes("Failed")
+                ? "text-danger"
+                : "text-success"
+            }`}
+          >
+            {message}
+          </p>
+        )}
         <div className="text-center mt-3">
           <a href="/register" className="text-decoration-none">
             Don't have an account? Register here

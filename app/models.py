@@ -39,6 +39,7 @@ class User:
     def __init__(self, data):
         self.id = str(data.get("_id", ""))
         self.email = data.get("email")
+        self.level = data.get("level")
         self.password = data.get("password")
         self.role = data.get("role", "user")
         self.saved_artworks = data.get("saved_artworks", []) 
@@ -47,6 +48,7 @@ class User:
         return {
             "id": self.id,
             "email": self.email,
+            "level": self.level,
             "role": self.role,
             "saved_artworks": self.saved_artworks,
         }

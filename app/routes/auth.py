@@ -254,10 +254,7 @@ class GoogleCallback(Resource):
             stored_tokens.pop(0)
 
         mongo.db.users.update_one({"email": email}, {"$set": {"refresh_tokens": stored_tokens}})
-        log_user_action(email, "login successfull with google")
+        log_user_action(email, "login successful with google")
 
-        return {
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "msg": "Login with Google successful"
-        }
+        frontend_url = f"http://localhost:3000/callback?access_token={access_token}&refresh_token={refresh_token}"
+        return redirect(frontend_url)
