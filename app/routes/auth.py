@@ -29,7 +29,7 @@ def send_verification_email(email, token):
     msg["Subject"] = "Welcome to Musaica"
     msg["From"] = SMTP_EMAIL
     msg["To"] = email
-    verify_link = url_for("auth.verify_email", token=token, _external=True)
+    verify_link = url_for("auth_verify_email", token=token, _external=True)
     msg.set_content(f"Your gmail account has been registered in our platform. Click to verify: {verify_link}")
 
     try:
@@ -45,7 +45,7 @@ def send_password_reset_email(email, token):
     msg['Subject'] = "Reset your password for your Musaica account"
     msg['From'] = SMTP_EMAIL
     msg['To'] = email
-    reset_link = url_for("auth.reset_password", token=token, _external=True)
+    reset_link = url_for("auth_reset_password", token=token, _external=True)
     msg.set_content(f"Click the link to reset your password: {reset_link}")
 
     try:
@@ -100,7 +100,37 @@ class VerifyEmail(Resource):
         )
 
         log_user_action(user["email"], "email_verified")
-        return {"msg": "Email verified successfully. You can now log in."}, 200
+        return redirect("http://localhost:3000/")
+
+@api.route("/check-verified")
+class CheckVerified(Resource):
+    def post(self):
+        data = request.get_json()
+        email = data.get("email", "")
+        if not email:
+            return {"msg": "Email is required"}, 400
+        user = mongo.db.users.find_one({"email": email})
+        if not user:
+            return {"msg": "User not found"}, 404
+        return {"verified": user.get("verified", False)}, 200
+
+@api.route("/resend-verification")
+class ResendVerification(Resource):
+    def post(self):
+        data = request.get_json()
+        email = data.get("email", "")
+        user = mongo.db.users.find_one({"email": email})
+        if not user:
+            return {"msg": "User not found"}, 404
+        if user.get("verified"):
+            return {"msg": "Email already verified"}, 400
+        verification_token = secrets.token_urlsafe(32)
+        mongo.db.users.update_one(
+            {"email": email},
+            {"$set": {"verification_token": verification_token}}
+        )
+        send_verification_email(email, verification_token)
+        return {"msg": "Verification email resent"}, 200
 
 @api.route("/login")
 class Login(Resource):

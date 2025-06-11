@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, request
 from dotenv import load_dotenv
-from flask_dance.contrib.google import make_google_blueprint, google
+from flask_dance.contrib.google import make_google_blueprint
 from flask_restx import Api
 from flask_cors import CORS
 from flask_talisman import Talisman
@@ -19,12 +19,19 @@ def create_app():
     app.config["GOOGLE_OAUTH_CLIENT_SECRET"] = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
-    CORS(app, resources={r"/*": {"origins": "*"}})
-    Talisman(app,content_security_policy={
-    'default-src': ['\'self\''],
-    'script-src': ['\'self\'', '\'unsafe-inline\''],
-    'style-src': ['\'self\'', '\'unsafe-inline\''],
-    'img-src': ['\'self\'', 'data:']
+    CORS(app, resources={r"/*": {
+        "origins": ["http://localhost:3000"],
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True
+    }})
+
+    Talisman(app, content_security_policy={
+        'default-src': ['\'self\''],
+        'script-src': ['\'self\'', '\'unsafe-inline\'', 'https://accounts.google.com'],
+        'style-src': ['\'self\'', '\'unsafe-inline\'', 'https://cdn.jsdelivr.net'],
+        'img-src': ['\'self\'', 'data:'],
+        'connect-src': ['\'self\'', 'http://localhost:5000', 'https://accounts.google.com']
     })
 
     @app.before_request
@@ -47,7 +54,7 @@ def create_app():
         scope=["openid", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"],
         redirect_to="auth_google_callback"
     )
-    app.register_blueprint(google_bp, url_prefix="/auth/")
+    app.register_blueprint(google_bp, url_prefix="/auth")
 
     api = Api(
         app,
