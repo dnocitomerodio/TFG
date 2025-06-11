@@ -17,14 +17,14 @@ class ExternalAPI:
             "User-Agent": "Musaica ArtExplorer/1.0 (musaicanotificaciones@proton.me)"
         }
         self.client = ChatCompletionsClient(
-        endpoint=os.getenv("AI_URL"),
-        credential=AzureKeyCredential(os.getenv("AI_KEY")),
+            endpoint=os.getenv("AI_URL"),
+            credential=AzureKeyCredential(os.getenv("AI_KEY")),
         )
-        self.ai_model=ai_model=os.getenv("AI_MODEL")
+        self.ai_model = os.getenv("AI_MODEL")
 
     def fetch_art_pieces(self, query, limit=10, offset=0, expand=False):
         wikidata_raw = self.fetch_from_wikidata(query, limit, offset)
-        results = [parse_result_wikidata(r) for r in wikidata_raw]
+        results = [parse_result_wikidata(r) for r in wikidata_raw if r.get("item", {}).get("value")]
 
         seen = set()
         deduped_results = []
@@ -33,7 +33,7 @@ class ExternalAPI:
                 (item.get("title") or "").strip().lower(),
                 (item.get("author") or "").strip().lower()
             )
-            if key not in seen:
+            if key not in seen and item.get("external_id"):
                 seen.add(key)
                 deduped_results.append(item)
 
@@ -87,7 +87,7 @@ class ExternalAPI:
 
     def enrich_result(self, result, europeana_list, met_list):
         def is_match(a, b):
-            return (a or "").strip().lower() == (b or "").strip().lower()
+            return (a or "").strip().lower() == (b or b.strip().lower())
 
         if result.get("image"):
             return result
@@ -131,7 +131,7 @@ class ExternalAPI:
 
         completion = self.client.complete(
             messages=[
-                    SystemMessage("You are an art expert how provides descriptions and explanations."),
+                    SystemMessage("You are an art expert who provides descriptions and explanations."),
                     UserMessage(prompt),  
             ], model=self.ai_model,
             temperature=1.0,
@@ -140,13 +140,12 @@ class ExternalAPI:
         )
         return completion.choices[0].message.content
 
-
     def fetch_single_art_piece(self, external_id: str, user_level="none"):
         external_id = external_id.strip()
         for key, results in self.cache.items():
             if key.endswith("|True"):
                 for result in results:
-                    if result.get("_id") == external_id:
+                    if result.get("external_id") == external_id:
                         if not result.get("museum"):
                             result["museum"] = "Private Collection"
                         if not result.get("location"):
@@ -195,14 +194,15 @@ class ExternalAPI:
                             res["description"] = enriched
                         except Exception as e:
                             print(f"Error generating enriched description: {e}")
+                    return res
         except requests.RequestException as e:
             print(f"Error querying Wikidata by ID: {e}")
 
-        return res
+        return {}
 
     def fetch_from_wikidata(self, query, limit, offset=0):
         sparql_query = f"""
-        SELECT ?item ?itemLabel ?creatorLabel ?museumLabel ?image WHERE {{
+        SELECT ?item ?itemLabel ?creatorLabel ?museumLabel ?image ?relatedImage WHERE {{
             SERVICE wikibase:mwapi {{
                 bd:serviceParam wikibase:endpoint "www.wikidata.org";
                                 wikibase:api "EntitySearch";
@@ -215,6 +215,7 @@ class ExternalAPI:
             OPTIONAL {{ ?item wdt:P170 ?creator. }}
             OPTIONAL {{ ?item wdt:P276 ?museum. }}
             OPTIONAL {{ ?item wdt:P18 ?image. }}
+            OPTIONAL {{ ?item wdt:P6802 ?relatedImage. }}
             SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
         }}
         LIMIT {limit}
@@ -402,9 +403,10 @@ class ExternalAPI:
         except requests.RequestException as e:
             print(f"Error searching artworks in museum in Wikidata: {e}")
         return []
-    
+
     def fetch_recommendations_from_wikidata(self, favorites, level, offset=0):
         if not favorites or offset < 0:
+            print("Returning empty list: no favorites or negative offset")
             return []
 
         if offset > 100:
@@ -453,30 +455,34 @@ class ExternalAPI:
                 response = requests.get(url, headers=self.headers)
                 if response.status_code == 200:
                     query_results = response.json().get("results", {}).get("bindings", [])
+                    print(f"Query for favorite {favorite} returned {len(query_results)} results")
                     results.extend(query_results)
                 else:
                     print(f"Error: HTTP {response.status_code} for favorite {favorite}")
             except requests.RequestException as e:
                 print(f"Error fetching recommendations from Wikidata for favorite {favorite}: {e}")
 
+        print(f"Total raw results: {len(results)}")
         return results
 
-    
 def parse_result_wikidata(item):
+    image = item.get("image", {}).get("value", "") or item.get("relatedImage", {}).get("value", "")
+    if image.startswith("commons:"):
+        image = f"https://commons.wikimedia.org/wiki/File:{image.replace('commons:', '')}"
     return {
-        "_id": item.get("item", {}).get("value", "").split("/")[-1],
+        "external_id": item.get("item", {}).get("value", "").split("/")[-1],
         "title": item.get("itemLabel", {}).get("value"),
-        "author": item.get("creatorLabel", {}).get("value"),
-        "museum": item.get("museumLabel", {}).get("value"),
-        "image": item.get("image", {}).get("value"),
+        "author": clean_field(item.get("creatorLabel", {}).get("value")),
+        "museum": clean_field(item.get("museumLabel", {}).get("value")),
+        "image": image if image else None,
     }
 
 def parse_result_wikidata_full(item):
     return {
-        "_id": item.get("item", {}).get("value", "").split("/")[-1],
+        "external_id": item.get("item", {}).get("value", "").split("/")[-1],
         "title": item.get("itemLabel", {}).get("value"),
-        "author": item.get("creatorLabel", {}).get("value"),
-        "museum": item.get("museumLabel", {}).get("value"),
+        "author": clean_field(item.get("creatorLabel", {}).get("value")),
+        "museum": clean_field(item.get("museumLabel", {}).get("value")),
         "image": item.get("image", {}).get("value"),
         "inception": item.get("inception", {}).get("value"),
         "style": item.get("styleLabel", {}).get("value"),
@@ -488,7 +494,7 @@ def parse_result_wikidata_full(item):
 
 def parse_result_europeana(item):
     return {
-        "_id": item.get("id"),
+        "external_id": item.get("id"),
         "title": item.get("title", [None])[0],
         "author": item.get("dcCreator", [None])[0] if item.get("dcCreator") else None,
         "image": item.get("edmIsShownBy"),
@@ -500,7 +506,7 @@ def parse_result_europeana(item):
 
 def parse_result_met(item):
     return {
-        "_id": str(item.get("objectID")),
+        "external_id": str(item.get("objectID")),
         "title": item.get("title"),
         "author": item.get("artistDisplayName"),
         "museum": "The Met",
@@ -509,3 +515,8 @@ def parse_result_met(item):
         "medium": item.get("medium"),
         "dimensions": item.get("dimensions"),
     }
+
+def clean_field(value):
+        if isinstance(value, str) and (value.startswith("http://") or value.startswith("https://")):
+            return "Unknown"
+        return value

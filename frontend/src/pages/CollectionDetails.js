@@ -7,7 +7,7 @@ const CollectionDetails = () => {
   const [artpiece, setArtpiece] = useState(null);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-  const [descriptionLevel, setDescriptionLevel] = useState("none"); // Default level
+  const [descriptionLevel, setDescriptionLevel] = useState("none");
   const navigate = useNavigate();
 
   const fetchArtPiece = async (level) => {

@@ -8,7 +8,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       try {
         const { data } = await axios.post(
-          "/auth/refresh",
+          "api/auth/refresh",
           {},
           {
             headers: {
