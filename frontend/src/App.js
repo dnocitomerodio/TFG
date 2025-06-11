@@ -7,6 +7,9 @@ import ForgotPassword from "./pages/ForgotPassword";
 import NotFound from "./pages/NotFound";
 import About from "./pages/About";
 import Contact from "./pages/Contact";
+import UserCollection from "./pages/UserCollection";
+import UserProfile from "./pages/UserProfile";
+import CollectionDetail from "./pages/CollectionDetail";
 
 function App() {
   return (
@@ -18,6 +21,12 @@ function App() {
         <Route path="/callback" element={<Callback />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/about" element={<About />} />
+        <Route path="/collection" element={<UserCollection />} />
+        <Route
+          path="/collection/artpiece/:external_id"
+          element={<CollectionDetail />}
+        />
+        <Route path="/profile" element={<UserProfile />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

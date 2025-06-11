@@ -19,19 +19,29 @@ def create_app():
     app.config["GOOGLE_OAUTH_CLIENT_SECRET"] = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
-    CORS(app, resources={r"/*": {
-        "origins": ["http://localhost:3000"],
-        "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"],
-        "supports_credentials": True
-    }})
+    CORS(app, resources={
+        r"/api/*": {
+            "origins": ["http://localhost:3000"],
+            "methods": ["GET", "POST", "DELETE", "PUT", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization"],
+            "supports_credentials": True
+        }
+    })
+
+    @app.after_request
+    def log_cors_headers(response):
+        print(f"Response Headers for {request.method} {request.path}:")
+        print(f"Access-Control-Allow-Origin: {response.headers.get('Access-Control-Allow-Origin')}")
+        print(f"Access-Control-Allow-Methods: {response.headers.get('Access-Control-Allow-Methods')}")
+        print(f"Access-Control-Allow-Headers: {response.headers.get('Access-Control-Allow-Headers')}")
+        return response
 
     Talisman(app, content_security_policy={
-        'default-src': ['\'self\''],
-        'script-src': ['\'self\'', '\'unsafe-inline\'', 'https://accounts.google.com'],
-        'style-src': ['\'self\'', '\'unsafe-inline\'', 'https://cdn.jsdelivr.net'],
-        'img-src': ['\'self\'', 'data:'],
-        'connect-src': ['\'self\'', 'http://localhost:5000', 'https://accounts.google.com']
+        'default-src': ["'self'"],
+        'script-src': ["'self'", "'unsafe-inline'", "https://accounts.google.com"],
+        'style-src': ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+        'img-src': ["'self'", "data:", "https://commons.wikimedia.org"],
+        'connect-src': ["'self'", "http://localhost:5000", "https://accounts.google.com"]
     })
 
     @app.before_request
@@ -54,22 +64,22 @@ def create_app():
         scope=["openid", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"],
         redirect_to="auth_google_callback"
     )
-    app.register_blueprint(google_bp, url_prefix="/auth")
+    app.register_blueprint(google_bp, url_prefix="/api/auth")
 
     api = Api(
         app,
         version="1.0",
         title="Musaica API",
         description="Documentation of the API for the management of users and artworks",
-        doc="/documentation"
+        doc="/api/documentation"
     )
     
     from .routes.user import api as user_ns
     from .routes.artpiece import api as artpiece_ns
     from .routes.auth import api as auth_ns
 
-    api.add_namespace(user_ns, path="/user")
-    api.add_namespace(artpiece_ns, path="/artpiece")
-    api.add_namespace(auth_ns, path="/auth")
+    api.add_namespace(user_ns, path="/api/user")
+    api.add_namespace(artpiece_ns, path="/api/artpiece")
+    api.add_namespace(auth_ns, path="/api/auth")
 
     return app

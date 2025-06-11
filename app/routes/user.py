@@ -19,6 +19,7 @@ user_model = api.model("User", {
     "password": fields.String(required=True, description="The user's password."),
     "role": fields.String(required=False, description="The user's role."),
     "level": fields.String(required=False, description="The user's level defines the depth of the descriptions he will see."),
+    "artpieces": fields.List(fields.String, required=False, description="The user's list of saved artworks."),
 })
 
 
@@ -29,10 +30,8 @@ class UserProfile(Resource):
     def get(self):
         identity = get_jwt_identity()
         user_data = mongo.db.users.find_one({"email": identity})
-
         if not user_data:
             return {"msg": "User not found"}, 404
-
         user = User(user_data)
         log_user_action(identity, "Viewed their profile")
         return user.to_dict(), 200
@@ -81,27 +80,21 @@ class DeleteUser(Resource):
         return {"msg": "User deleted successfully"}, 200
 
 
-@api.route("/remove/<string:artpiece_id>")
-class RemoveArtpiece(Resource):
+@api.route('/remove/<string:external_id>')
+class RemoveArtPiece(Resource):
     @jwt_required()
-    @api.doc(security="Bearer Auth")
-    def delete(self, artpiece_id):
-        identity = get_jwt_identity()
-
-        result = mongo.db.users.update_one(
-            {"email": identity},
-            {"$pull": {"artpieces": artpiece_id}}
+    def delete(self, external_id):
+        email = get_jwt_identity()
+        user = mongo.db.users.find_one({"email": email})
+        if not user:
+            return {"msg": "User not found"}, 404
+        if external_id not in user.get('artpieces', []):
+            return {"msg": "Art piece not in collection"}, 400
+        mongo.db.users.update_one(
+            {"email": email},
+            {"$pull": {"artpieces": external_id}}
         )
-
-        if result.modified_count == 0:
-            return {"msg": "Art piece not found in user list"}, 404
-
-        users_with_artpiece = mongo.db.users.find_one({"artpieces": artpiece_id})
-        if not users_with_artpiece:
-            mongo.db.artpieces.delete_one({"_id": ObjectId(artpiece_id)})
-
-        log_user_action(identity, f"Removed art piece {artpiece_id} from their collection")
-        return {"msg": "Art piece removed from user"}, 200
+        return {"msg": "Art piece removed successfully"}, 200
 
 
 @api.route("/users")

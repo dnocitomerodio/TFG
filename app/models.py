@@ -42,7 +42,7 @@ class User:
         self.level = data.get("level")
         self.password = data.get("password")
         self.role = data.get("role", "user")
-        self.saved_artworks = data.get("saved_artworks", []) 
+        self.artpieces = data.get("artpieces", []) 
 
     def to_dict(self):
         return {
@@ -50,5 +50,5 @@ class User:
             "email": self.email,
             "level": self.level,
             "role": self.role,
-            "saved_artworks": self.saved_artworks,
+            "artpieces": self.artpieces,
         }
