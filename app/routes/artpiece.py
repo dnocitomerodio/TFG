@@ -83,7 +83,7 @@ class ExternalArtPieceDetail(Resource):
         data = request.get_json(silent=True) or {}
         user = mongo.db.users.find_one({"email": identity})
         default_user_level = user.get("level", "none")
-        level = data.get("level", default_user_level)
+        level = request.args.get("level", data.get("level", default_user_level))
         result = external_api.fetch_single_art_piece(external_id, level)
         if not result:
             return {"msg": "Art piece not found"}, 404

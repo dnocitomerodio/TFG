@@ -61,7 +61,7 @@ const Login = () => {
           const email = decoded.identity || decoded.sub;
 
           const { data } = await axios.post(
-            "http://localhost:5000/auth/refresh",
+            "http://localhost:5000/api/auth/refresh",
             {},
             {
               headers: {
@@ -100,7 +100,7 @@ const Login = () => {
     setIsLoading(true);
     try {
       const { data } = await axios.post(
-        "http://localhost:5000/auth/login",
+        "http://localhost:5000/api/auth/login",
         formData
       );
 
@@ -139,13 +139,13 @@ const Login = () => {
 
   const handleGoogleSignIn = () => {
     setIsLoading(true);
-    window.location.href = "http://localhost:5000/auth/google";
+    window.location.href = "http://localhost:5000/api/auth/google";
   };
 
   const handleLogout = async () => {
     try {
       await axios.post(
-        "http://localhost:5000/auth/logout",
+        "http://localhost:5000/api/auth/logout",
         {},
         {
           headers: {

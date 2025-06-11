@@ -2,46 +2,70 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import axios from "../utils/api";
 
-const CollectionDetail = () => {
+const CollectionDetails = () => {
   const { external_id } = useParams();
   const [artpiece, setArtpiece] = useState(null);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [descriptionLevel, setDescriptionLevel] = useState("none"); // Default level
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const fetchArtPiece = async () => {
-      const token = localStorage.getItem("token");
-      if (!token) {
-        navigate("/login");
-        return;
-      }
-      try {
-        const { data } = await axios.get(
-          `/api/artpiece/external/${external_id}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-        console.log("Art piece data:", data);
-        setArtpiece(data);
-        setError("");
-      } catch (err) {
-        console.error("Art piece error:", err);
-        if (err.response?.status === 401) {
-          setError("Session expired. Please log in again.");
-          localStorage.removeItem("token");
-          localStorage.removeItem("refreshToken");
-          navigate("/login");
-        } else {
-          setError(err.response?.data?.msg || "Error loading art piece.");
+  const fetchArtPiece = async (level) => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+    try {
+      const { data } = await axios.get(
+        `/api/artpiece/external/${external_id}?level=${level}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         }
-      } finally {
-        setIsLoading(false);
+      );
+      console.log("Art piece data:", data);
+      setArtpiece(data);
+      setError("");
+    } catch (err) {
+      console.error("Art piece fetch error:", {
+        message: err.message,
+        response: err.response
+          ? {
+              status: err.response.status,
+              data: err.response.data,
+              headers: err.response.headers,
+            }
+          : "No response (possible CORS issue)",
+      });
+      if (err.response?.status === 401) {
+        setError("Session expired. Please log in again.");
+        localStorage.removeItem("token");
+        localStorage.removeItem("refreshToken");
+        navigate("/login");
+      } else {
+        setError(
+          err.response?.data?.msg ||
+            "Error loading art piece. Please try again later."
+        );
       }
-    };
-    fetchArtPiece();
-  }, [external_id, navigate]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchArtPiece(descriptionLevel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [external_id, navigate, descriptionLevel]);
+
+  const handleLevelChange = (newLevel) => {
+    if (newLevel !== descriptionLevel) {
+      setIsLoading(true);
+      setDescriptionLevel(newLevel);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -106,9 +130,31 @@ const CollectionDetail = () => {
                   <strong>Dimensions:</strong>{" "}
                   {artpiece.dimensions || "Unknown"}
                 </p>
+              </div>
+            </div>
+            <div className="row">
+              <div className="col-12">
                 <p className="card-text">
                   <strong>Description:</strong>{" "}
                   {artpiece.description || "No description available"}
+                  {descriptionLevel !== "beginner" && (
+                    <span
+                      className="text-primary ms-2"
+                      style={{ cursor: "pointer", textDecoration: "underline" }}
+                      onClick={() => handleLevelChange("beginner")}
+                    >
+                      Want a basic explanation?
+                    </span>
+                  )}
+                  {descriptionLevel !== "expert" && (
+                    <span
+                      className="text-primary ms-2"
+                      style={{ cursor: "pointer", textDecoration: "underline" }}
+                      onClick={() => handleLevelChange("expert")}
+                    >
+                      Want an expert explanation?
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
@@ -122,4 +168,4 @@ const CollectionDetail = () => {
   );
 };
 
-export default CollectionDetail;
+export default CollectionDetails;

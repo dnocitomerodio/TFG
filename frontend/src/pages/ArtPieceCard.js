@@ -18,7 +18,7 @@ const ArtPieceCard = ({ artpiece, handleRemove, isLoading }) => {
         <p className="card-text">Museum: {artpiece.museum || "Unknown"}</p>
         <div className="mt-auto d-flex gap-2">
           <Link
-            to={`/artpieces/external/${artpiece.external_id}`}
+            to={`/collection/artpiece/${artpiece.external_id}`}
             className="btn btn-success btn-sm"
           >
             View Details

@@ -43,7 +43,7 @@ const Register = () => {
       intervalId = setInterval(async () => {
         try {
           const { data } = await axios.post(
-            "http://localhost:5000/auth/check-verified",
+            "http://localhost:5000/api/auth/check-verified",
             {
               email: formData.email,
             }
@@ -77,7 +77,7 @@ const Register = () => {
     try {
       // eslint-disable-next-line no-unused-vars
       const { data } = await axios.post(
-        "http://localhost:5000/auth/register",
+        "http://localhost:5000/api/auth/register",
         formData
       );
       setMessage(
@@ -107,7 +107,7 @@ const Register = () => {
 
   const handleGoogleSignUp = () => {
     setIsLoading(true);
-    window.location.href = "http://localhost:5000/auth/google";
+    window.location.href = "http://localhost:5000/api/auth/google";
   };
 
   const handleResendVerification = async () => {
@@ -115,7 +115,7 @@ const Register = () => {
     setMessage("");
     try {
       const { data } = await axios.post(
-        "http://localhost:5000/auth/resend-verification",
+        "http://localhost:5000/api/auth/resend-verification",
         {
           email: formData.email,
         }

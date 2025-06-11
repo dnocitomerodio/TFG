@@ -8,8 +8,7 @@ import NotFound from "./pages/NotFound";
 import About from "./pages/About";
 import Contact from "./pages/Contact";
 import UserCollection from "./pages/UserCollection";
-import UserProfile from "./pages/UserProfile";
-import CollectionDetail from "./pages/CollectionDetail";
+import CollectionDetails from "./pages/CollectionDetails";
 
 function App() {
   return (
@@ -24,9 +23,8 @@ function App() {
         <Route path="/collection" element={<UserCollection />} />
         <Route
           path="/collection/artpiece/:external_id"
-          element={<CollectionDetail />}
+          element={<CollectionDetails />}
         />
-        <Route path="/profile" element={<UserProfile />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
