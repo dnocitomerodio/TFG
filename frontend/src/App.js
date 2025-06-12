@@ -10,6 +10,7 @@ import NotFound from "./pages/NotFound";
 import About from "./pages/About";
 import Contact from "./pages/Contact";
 import UserCollection from "./pages/UserCollection";
+import UserProfile from "./pages/UserProfile";
 import CollectionDetails from "./pages/CollectionDetails";
 
 function App() {
@@ -29,6 +30,7 @@ function App() {
           path="/collection/artpiece/:external_id"
           element={<CollectionDetails />}
         />
+        <Route path="/profile" element={<UserProfile />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
