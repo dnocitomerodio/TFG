@@ -8,6 +8,10 @@ const UserCollection = () => {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const [radiusKm, setRadiusKm] = useState(5);
+  const [nearbyArtworks, setNearbyArtworks] = useState([]);
+  const [nearbyLoading, setNearbyLoading] = useState(false);
+  const [nearbyError, setNearbyError] = useState("");
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -69,6 +73,12 @@ const UserCollection = () => {
     }
   }, [error, retryCount]);
 
+  useEffect(() => {
+    // Reset nearby artworks when collection changes
+    setNearbyArtworks([]);
+    setNearbyError("");
+  }, [artworks]);
+
   const handleRemove = async (external_id) => {
     setError("");
     setIsLoading(true);
@@ -106,9 +116,129 @@ const UserCollection = () => {
     }
   };
 
+  const handleCheckNearby = async (e) => {
+    e.preventDefault();
+    setNearbyError("");
+    setNearbyLoading(true);
+    setNearbyArtworks([]);
+
+    if (!navigator.geolocation) {
+      setNearbyError("Geolocation is not supported by your browser.");
+      setNearbyLoading(false);
+      return;
+    }
+
+    try {
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0,
+        });
+      });
+      const { latitude, longitude } = position.coords;
+
+      const token = localStorage.getItem("token");
+      const nearbyPromises = artworks.map((art) =>
+        axios
+          .get(`/api/artpiece/nearby/${art.external_id}`, {
+            params: { lat: latitude, lon: longitude, radius_km: radiusKm },
+            headers: { Authorization: `Bearer ${token}` },
+          })
+          .then((res) => ({
+            ...art,
+            is_nearby: res.data.is_nearby,
+          }))
+          .catch((err) => {
+            console.error(`Error checking ${art.external_id}:`, err);
+            return { ...art, is_nearby: false };
+          })
+      );
+
+      const results = await Promise.all(nearbyPromises);
+      const nearby = results.filter((art) => art.is_nearby);
+
+      if (nearby.length > 0) {
+        setNearbyArtworks(nearby);
+        if (Notification.permission === "granted") {
+          new Notification("Nearby Artworks Found!", {
+            body: `The following artworks are within ${radiusKm} km:\n${nearby
+              .map((art) => art.title)
+              .join(", ")}`,
+          });
+        } else if (Notification.permission !== "denied") {
+          const permission = await Notification.requestPermission();
+          if (permission === "granted") {
+            new Notification("Nearby Artworks Found!", {
+              body: `The following artworks are within ${radiusKm} km:\n${nearby
+                .map((art) => art.title)
+                .join(", ")}`,
+            });
+          }
+        }
+      } else {
+        setNearbyError(
+          `No artworks found within ${radiusKm} km of your location.`
+        );
+      }
+    } catch (err) {
+      console.error("Geolocation error:", err);
+      let errorMsg = "Error checking nearby artworks.";
+      if (err.code === 1) {
+        errorMsg = "Geolocation permission denied.";
+      } else if (err.code === 2) {
+        errorMsg = "Unable to retrieve your location.";
+      } else if (err.code === 3) {
+        errorMsg = "Geolocation request timed out.";
+      }
+      setNearbyError(errorMsg);
+    } finally {
+      setNearbyLoading(false);
+    }
+  };
+
   return (
     <div className="container mt-5">
       <h2>My Collection</h2>
+      <form onSubmit={handleCheckNearby} className="mb-4">
+        <div className="input-group">
+          <input
+            type="number"
+            className="form-control"
+            value={radiusKm}
+            onChange={(e) =>
+              setRadiusKm(Math.max(1, Math.min(100, e.target.value)))
+            }
+            min="1"
+            max="100"
+            step="1"
+            placeholder="Enter radius in km"
+            aria-label="Radius in kilometers"
+          />
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={nearbyLoading || artworks.length === 0}
+          >
+            {nearbyLoading ? (
+              <span
+                className="spinner-border spinner-border-sm"
+                role="status"
+                aria-hidden="true"
+              ></span>
+            ) : (
+              "Check Nearby"
+            )}
+          </button>
+        </div>
+        {nearbyError && <p className="text-danger mt-2">{nearbyError}</p>}
+        {nearbyArtworks.length > 0 && (
+          <p className="text-success mt-2">
+            Found {nearbyArtworks.length} artwork(s) within {radiusKm} km:{" "}
+            {nearbyArtworks.map((art) => art.title).join(", ")}
+          </p>
+        )}
+      </form>
       {isLoading && (
         <div className="text-center">
           <div className="spinner-border text-success" role="status">

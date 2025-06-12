@@ -251,6 +251,36 @@ class MuseumsNearby(Resource):
         except Exception as e:
             return {"msg": f"Error retrieving museums: {str(e)}"}, 500
 
+@api.route("/nearby/<string:external_id>")
+class ArtworkNearby(Resource):
+    @jwt_required()
+    @api.doc(security="Bearer Auth", params={
+        "lat": "Latitude (e.g., 48.8606)",
+        "lon": "Longitude (e.g., 2.3376)",
+        "radius_km": "Search radius in kilometers (default: 5)"
+    })
+    def get(self, external_id):
+        identity = get_jwt_identity()
+        lat = request.args.get("lat")
+        lon = request.args.get("lon")
+        radius_km = request.args.get("radius_km", "5")
+
+        if not lat or not lon:
+            return {"msg": "Latitude and longitude are required"}, 400
+
+        try:
+            lat = float(lat)
+            lon = float(lon)
+            radius_km = float(radius_km)
+        except ValueError:
+            return {"msg": "Latitude, longitude, and radius_km must be valid numbers"}, 400
+
+        try:
+            is_nearby = external_api.is_artwork_nearby(external_id, lat, lon, radius_km)
+            log_user_action(identity, f"Checked if artwork {external_id} is near ({lat}, {lon}) within {radius_km} km")
+            return {"is_nearby": is_nearby}, 200
+        except Exception as e:
+            return {"msg": f"Error checking artwork location: {str(e)}"}, 500
 
 @api.route("/museum_works/<string:museum_id>")
 class WorksByMuseum(Resource):

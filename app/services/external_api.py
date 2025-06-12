@@ -1,5 +1,6 @@
 import requests
 import os
+import math
 from azure.ai.inference import ChatCompletionsClient
 from azure.ai.inference.models import SystemMessage, UserMessage
 from azure.core.credentials import AzureKeyCredential
@@ -470,6 +471,74 @@ class ExternalAPI:
 
         print(f"Total raw results: {len(results)}")
         return results
+    
+    def is_artwork_nearby(self, external_id, latitude, longitude, radius_km=10):
+        sparql_query = f"""
+        SELECT ?item ?itemLabel ?lat ?lon WHERE {{
+            BIND(wd:{external_id} AS ?item)
+            {{
+                ?item wdt:P625 ?coord .
+            }}
+            UNION
+            {{
+                ?item wdt:P276 ?place .
+                ?place wdt:P625 ?coord .
+            }}
+            UNION
+            {{
+                ?item wdt:P195 ?place .
+                ?place wdt:P625 ?coord .
+            }}
+            SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en,es". }}
+            BIND(geof:latitude(?coord) AS ?lat)
+            BIND(geof:longitude(?coord) AS ?lon)
+        }}
+        LIMIT 1
+        """
+        encoded_query = quote_plus(sparql_query)
+        url = f"{self.base_url}?query={encoded_query}&format=json"
+
+        try:
+            response = requests.get(url, headers=self.headers)
+            print(f"Wikidata query URL for {external_id}: {url}")
+            if response.status_code == 200:
+                results = response.json().get("results", {}).get("bindings", [])
+                print(f"Wikidata response for {external_id}: {results}")
+                if results:
+                    lat = float(results[0].get("lat", {}).get("value"))
+                    lon = float(results[0].get("lon", {}).get("value"))
+                    item_label = results[0].get("itemLabel", {}).get("value", "Unknown")
+                    print(f"Coordinates for {external_id} ({item_label}): lat={lat}, lon={lon}")
+                    
+                    distance = self.haversine_distance(latitude, longitude, lat, lon)
+                    print(f"Distance for {external_id}: {distance:.2f} km (radius: {radius_km} km)")
+                    
+                    if distance <= radius_km:
+                        print(f"Artwork {external_id} is nearby at {distance:.2f} km")
+                        return True
+                    else:
+                        print(f"Artwork {external_id} is too far at {distance:.2f} km")
+                        return False
+                else:
+                    print(f"No coordinates found for artwork {external_id}")
+                    return False
+            else:
+                print(f"Error fetching artwork {external_id}: HTTP {response.status_code}")
+                return False
+        except requests.RequestException as e:
+            print(f"Error querying Wikidata for artwork {external_id}: {e}")
+            return False
+    
+        
+    def haversine_distance(self, lat1, lon1, lat2, lon2):
+            R = 6371
+            lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+            a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
+            c = 2 * math.asin(math.sqrt(a))
+            return R * c
+
 
 def parse_result_wikidata(item):
     title = item.get("itemLabel", {}).get("value", "")
