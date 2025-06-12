@@ -192,10 +192,12 @@ class RemoveFromUserCollection(Resource):
 @api.route("/artist")
 class ArtistSearch(Resource):
     @jwt_required()
-    @api.doc(security="Bearer Auth", params={"query": "Artist name to search for"})
+    @api.doc(security="Bearer Auth", params={"query": "Artist name to search for", "limit": "Number of results per page (default: 10)", "offset": "Offset for pagination (default: 0)"})
     def get(self):
         identity = get_jwt_identity()
         artist_name = request.args.get("query", "")
+        limit = int(request.args.get("limit", 10))
+        offset = int(request.args.get("offset", 0))
         if not artist_name:
             return {"msg": "Query parameter is required (artist name)"}, 400
 
@@ -203,18 +205,19 @@ class ArtistSearch(Resource):
         if not artist_data:
             return {"msg": f"Artist '{artist_name}' not found in Wikidata"}, 404
 
-        artworks = external_api.fetch_works_by_artist(artist_data["wikidata_id"], limit=50)
+        artworks = external_api.fetch_works_by_artist(artist_data["wikidata_id"], limit=limit, offset=offset)
 
         formatted_artworks = []
         for work in artworks:
-            item = work.get("item", {}).get("value", "")
-            external_id = item.split("/")[-1] if item else ""
             formatted_artworks.append({
-                "external_id": external_id,
-                "title": work.get("itemLabel", {}).get("value", ""),
-                "description": work.get("itemDescription", {}).get("value", ""),
-                "source_url": f"https://www.wikidata.org/wiki/{external_id}" if external_id else "",
-                "sitelinks": int(work.get("sitelinks", {}).get("value", 0)) if "sitelinks" in work else 0
+                "external_id": work.get("external_id", ""),
+                "title": work.get("title", ""),
+                "description": work.get("description", ""),
+                "source_url": f"https://www.wikidata.org/wiki/{work.get('external_id', '')}" if work.get("external_id") else "",
+                "sitelinks": work.get("sitelinks", 0),
+                "image": work.get("image", ""),
+                "author": work.get("author", artist_data["label"]),
+                "museum": work.get("museum", "Unknown")
             })
 
         log_user_action(identity, f"Searched artworks for artist query: '{artist_name}'")

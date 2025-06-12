@@ -87,7 +87,7 @@ class ExternalAPI:
 
     def enrich_result(self, result, europeana_list, met_list):
         def is_match(a, b):
-            return (a or "").strip().lower() == (b or b.strip().lower())
+            return (a or "").strip().lower() == (b or "").strip().lower()
 
         if result.get("image"):
             return result
@@ -309,16 +309,21 @@ class ExternalAPI:
 
         return None
 
-    def fetch_works_by_artist(self, artist_wikidata_id, limit=50):
+    def fetch_works_by_artist(self, artist_wikidata_id, limit=50, offset=0):
         sparql_query = f"""
-        SELECT ?item ?itemLabel ?itemDescription ?sitelinks WHERE {{
-        ?item wdt:P170 wd:{artist_wikidata_id} .
-        OPTIONAL {{ ?item schema:description ?itemDescription FILTER (LANG(?itemDescription) = "en") }}
-        OPTIONAL {{ ?item wikibase:sitelinks ?sitelinks }}
-        SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
+        SELECT ?item ?itemLabel ?itemDescription ?museumLabel ?sitelinks ?image ?relatedImage ?creatorLabel WHERE {{
+            ?item wdt:P170 wd:{artist_wikidata_id} .
+            OPTIONAL {{ ?item schema:description ?itemDescription FILTER (LANG(?itemDescription) = "en") }}
+            OPTIONAL {{ ?item wdt:P18 ?image. }}
+            OPTIONAL {{ ?item wdt:P6802 ?relatedImage. }}
+            OPTIONAL {{ ?item wdt:P276 ?museum. }}
+            OPTIONAL {{ ?item wdt:P170 ?creator. }}
+            OPTIONAL {{ ?item wikibase:sitelinks ?sitelinks }}
+            SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
         }}
         ORDER BY DESC(?sitelinks)
         LIMIT {limit}
+        OFFSET {offset}
         """
         encoded_query = quote_plus(sparql_query)
         url = f"{self.base_url}?query={encoded_query}&format=json"
@@ -327,11 +332,11 @@ class ExternalAPI:
             response = requests.get(url, headers=self.headers)
             if response.status_code == 200:
                 results = response.json().get("results", {}).get("bindings", [])
-                return results
+                return [parse_result_wikidata(r) for r in results if r.get("item", {}).get("value")]
         except requests.RequestException as e:
             print(f"Error searching works by artist in Wikidata: {e}")
         return []
-    
+
     def fetch_museums_nearby(self, latitude, longitude, radius_km=10):
         sparql_query = f"""
         SELECT DISTINCT ?item ?itemLabel ?coord ?lat ?lon ?dist ?image WHERE {{
@@ -376,7 +381,7 @@ class ExternalAPI:
                     })
                 return museums
         except requests.RequestException as e:
-            print(f"Error searching nearby museums in Wikidata: {e}")
+            print(f"Error searching nearby museums: {e}")
         return []
 
     def fetch_artworks_in_museum(self, museum_wikidata_id, limit=100):
@@ -402,7 +407,7 @@ class ExternalAPI:
                 results = response.json().get("results", {}).get("bindings", [])
                 return results
         except requests.RequestException as e:
-            print(f"Error searching artworks in museum in Wikidata: {e}")
+            print(f"Error searching artworks in museum: {e}")
         return []
 
     def fetch_recommendations_from_wikidata(self, favorites, level, offset=0):
@@ -505,7 +510,6 @@ def parse_result_wikidata_full(item):
         "description": item.get("description", {}).get("value", ""),
     }
 
-
 def parse_result_europeana(item):
     return {
         "external_id": item.get("id"),
@@ -531,9 +535,9 @@ def parse_result_met(item):
     }
 
 def clean_field(value):
-        if isinstance(value, str) and (value.startswith("http://") or value.startswith("https://")):
-            return "Unknown"
-        return value
+    if isinstance(value, str) and (value.startswith("http://") or value.startswith("https://")):
+        return "Unknown"
+    return value
 
 def fetch_image_with_google_cse(image, related_image=None, title=None, artist=None):
     img = image or related_image or ""

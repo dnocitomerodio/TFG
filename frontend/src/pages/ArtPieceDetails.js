@@ -2,28 +2,34 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "../utils/api";
 
-const ArtPieceDetail = () => {
+const ArtPieceDetails = () => {
   const { external_id } = useParams();
   const [artpiece, setArtpiece] = useState(null);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isInCollection, setIsInCollection] = useState(false);
   const [addStatus, setAddStatus] = useState("");
-  const [isAdding, setIsAdding] = useState(false);
   const [descriptionLevel, setDescriptionLevel] = useState("none");
   const navigate = useNavigate();
 
-  const fetchArtPiece = async (level) => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      navigate("/login");
-      return;
+  const getImageUrl = (image) => {
+    if (image && image.includes("commons.wikimedia.org")) {
+      const fileName = image.split("/").pop();
+      return `https://commons.wikimedia.org/wiki/Special:FilePath/${fileName}?width=500`;
+    } else if (image && image.startsWith("commons:")) {
+      const fileName = image.replace("commons:", "");
+      return `https://commons.wikimedia.org/wiki/Special:FilePath/${fileName}?width=500`;
     }
+    return image || "https://via.placeholder.com/500x500.png?text=No+Image";
+  };
+
+  const fetchArtPiece = async (level) => {
     try {
       const { data } = await axios.get(
         `/api/artpiece/external/${external_id}?level=${level}`,
         {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
         }
       );
       console.log("Art piece data:", data);
@@ -44,11 +50,11 @@ const ArtPieceDetail = () => {
         setError("Session expired. Please log in again.");
         localStorage.removeItem("token");
         localStorage.removeItem("refreshToken");
-        navigate("/login");
+        navigate("/login", { replace: true });
       } else {
         setError(
           err.response?.data?.msg ||
-            "Error loading art piece. Please check your network or try again later."
+            "Error loading art piece. Please try again later."
         );
       }
     } finally {
@@ -57,14 +63,9 @@ const ArtPieceDetail = () => {
   };
 
   const checkIfInCollection = async () => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      navigate("/login");
-      return;
-    }
     try {
       const { data: userData } = await axios.get("/api/user/profile", {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
       });
       const externalIds = userData.artpieces || [];
       setIsInCollection(externalIds.includes(external_id));
@@ -79,24 +80,16 @@ const ArtPieceDetail = () => {
           : "No response (possible CORS or network issue)",
       });
       setIsInCollection(false);
-      setError(
-        err.response?.data?.msg ||
-          "Error checking collection. Please try again later."
-      );
     }
   };
 
   const handleAddToCollection = async () => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      navigate("/login");
-      return;
-    }
     if (!artpiece) {
       setAddStatus("Error: Art piece data not available.");
+      setIsLoading(false);
       return;
     }
-    setIsAdding(true);
+    setIsLoading(true);
     try {
       const artpieceData = {
         _id: external_id,
@@ -112,14 +105,9 @@ const ArtPieceDetail = () => {
         dimensions: artpiece.dimensions || "Unknown",
         description: artpiece.description || "No description available",
       };
-      // eslint-disable-next-line no-unused-vars
-      const { data } = await axios.post(
-        "/api/artpiece/add_to_user",
-        artpieceData,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      await axios.post("/api/artpiece/add_to_user", artpieceData, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+      });
       setAddStatus("Art piece added to your collection!");
       setIsInCollection(true);
     } catch (err) {
@@ -137,12 +125,11 @@ const ArtPieceDetail = () => {
         setIsInCollection(true);
       } else {
         setAddStatus(
-          err.response?.data?.msg ||
-            "Error adding art piece. Please check your network or try again later."
+          err.response?.data?.msg || "Failed to add artwork. Please try again."
         );
       }
     } finally {
-      setIsAdding(false);
+      setIsLoading(false);
     }
   };
 
@@ -153,7 +140,22 @@ const ArtPieceDetail = () => {
     }
   };
 
+  const handleCloseTab = () => {
+    window.close();
+    setTimeout(() => {
+      setError("Unable to close tab. Redirecting to search...");
+      navigate("/search", { replace: true });
+    }, 2000);
+  };
+
   useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setIsAuthenticated(false);
+      navigate("/login", { replace: true });
+      return;
+    }
+    setIsAuthenticated(true);
     fetchArtPiece(descriptionLevel);
     checkIfInCollection();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -165,6 +167,17 @@ const ArtPieceDetail = () => {
       return () => clearTimeout(timer);
     }
   }, [addStatus]);
+
+  if (!isAuthenticated) {
+    return (
+      <div className="container mt-5 text-center">
+        <div className="spinner-border text-success" role="status">
+          <span className="visually-hidden">Loading...</span>
+        </div>
+        <p>Redirecting to login...</p>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -192,20 +205,13 @@ const ArtPieceDetail = () => {
         <div className="card shadow-sm rounded">
           {artpiece.image && (
             <img
-              src={
-                artpiece.image.startsWith("commons:")
-                  ? `http://commons.wikimedia.org/wiki/File:${artpiece.image.replace(
-                      "commons:",
-                      ""
-                    )}`
-                  : artpiece.image
-              }
+              src={getImageUrl(artpiece.image)}
               alt={artpiece.title || "Art piece"}
               className="card-img-top rounded-top"
               style={{
-                maxHeight: "500px",
+                maxHeight: "600px",
                 objectFit: "contain",
-                padding: "1rem",
+                padding: "8px",
               }}
             />
           )}
@@ -271,20 +277,20 @@ const ArtPieceDetail = () => {
                 </p>
               </div>
             </div>
-            <div className="d-flex gap-2">
+            <div className="d-flex gap-2 mt-3">
               <button
                 className="btn btn-success btn-sm"
-                onClick={() => navigate(-1)}
+                onClick={handleCloseTab}
               >
-                Back
+                Close Tab
               </button>
               {!isInCollection && (
                 <button
                   className="btn btn-primary btn-sm"
                   onClick={handleAddToCollection}
-                  disabled={isAdding}
+                  disabled={isLoading}
                 >
-                  {isAdding ? "Adding..." : "Add to Collection"}
+                  {isLoading ? "Adding..." : "Add to Collection"}
                 </button>
               )}
             </div>
@@ -295,4 +301,4 @@ const ArtPieceDetail = () => {
   );
 };
 
-export default ArtPieceDetail;
+export default ArtPieceDetails;
