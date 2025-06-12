@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import axios from "../utils/api";
 
 const Search = () => {
@@ -13,7 +13,7 @@ const Search = () => {
   const [searchPage, setSearchPage] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  const [searchMode, setSearchMode] = useState("title"); // "title" or "artist"
+  const [searchMode, setSearchMode] = useState("title");
   const pageSize = 10;
   const navigate = useNavigate();
 
@@ -26,6 +26,45 @@ const Search = () => {
       return `https://commons.wikimedia.org/wiki/Special:FilePath/${fileName}?width=200`;
     }
     return image || "https://via.placeholder.com/200x200.png?text=No+Image";
+  };
+
+  const saveSearchState = () => {
+    const searchState = {
+      query,
+      searchMode,
+      results,
+      artistResults,
+      artistInfo,
+      searchOffset,
+      searchPage,
+    };
+    localStorage.setItem("searchState", JSON.stringify(searchState));
+  };
+
+  const loadSearchState = () => {
+    const savedState = localStorage.getItem("searchState");
+    if (savedState) {
+      const {
+        query: savedQuery,
+        searchMode: savedMode,
+        results: savedResults,
+        artistResults: savedArtistResults,
+        artistInfo: savedArtistInfo,
+        searchOffset: savedOffset,
+        searchPage: savedPage,
+      } = JSON.parse(savedState);
+      setQuery(savedQuery || "");
+      setSearchMode(savedMode || "title");
+      setResults(savedResults || []);
+      setArtistResults(savedArtistResults || []);
+      setArtistInfo(savedArtistInfo || null);
+      setSearchOffset(savedOffset || 0);
+      setSearchPage(savedPage || 1);
+    }
+  };
+
+  const clearSearchState = () => {
+    localStorage.removeItem("searchState");
   };
 
   const renderCard = (item, index, type) => (
@@ -55,14 +94,12 @@ const Search = () => {
             <strong>Description:</strong>{" "}
             {item.description || "No description available"}
           </p>
-          <a
-            href={`/artpiece/${item.external_id}`}
-            target="_blank"
-            rel="noopener noreferrer"
+          <Link
+            to={`/artpiece/${item.external_id}`}
             className="btn btn-primary btn-sm"
           >
             View Details
-          </a>
+          </Link>
         </div>
       </div>
     </div>
@@ -145,6 +182,7 @@ const Search = () => {
       setArtistResults([]);
       setArtistInfo(null);
       setError("");
+      saveSearchState();
     } catch (err) {
       console.error("Title search error:", {
         message: err.message,
@@ -197,6 +235,7 @@ const Search = () => {
       setArtistInfo(response.data.artist || null);
       setResults([]);
       setError("");
+      saveSearchState();
     } catch (err) {
       console.error("Artist search error:", {
         message: err.message,
@@ -218,6 +257,7 @@ const Search = () => {
   };
 
   const handleSearch = (e) => {
+    clearSearchState();
     setSearchOffset(0);
     setSearchPage(1);
     if (searchMode === "artist") {
@@ -251,6 +291,7 @@ const Search = () => {
   };
 
   const handleSearchMode = (mode) => {
+    clearSearchState();
     setSearchMode(mode);
     setQuery("");
     setResults([]);
@@ -262,6 +303,7 @@ const Search = () => {
   };
 
   useEffect(() => {
+    loadSearchState();
     fetchRecommendations(offset);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);

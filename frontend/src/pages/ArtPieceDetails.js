@@ -140,12 +140,8 @@ const ArtPieceDetails = () => {
     }
   };
 
-  const handleCloseTab = () => {
-    window.close();
-    setTimeout(() => {
-      setError("Unable to close tab. Redirecting to search...");
-      navigate("/search", { replace: true });
-    }, 2000);
+  const handleBack = () => {
+    navigate(-1);
   };
 
   useEffect(() => {
@@ -278,11 +274,8 @@ const ArtPieceDetails = () => {
               </div>
             </div>
             <div className="d-flex gap-2 mt-3">
-              <button
-                className="btn btn-success btn-sm"
-                onClick={handleCloseTab}
-              >
-                Close Tab
+              <button className="btn btn-success btn-sm" onClick={handleBack}>
+                Back
               </button>
               {!isInCollection && (
                 <button
