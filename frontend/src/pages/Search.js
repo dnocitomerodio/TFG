@@ -8,14 +8,18 @@ const Search = () => {
   const [artistResults, setArtistResults] = useState([]);
   const [artistInfo, setArtistInfo] = useState(null);
   const [recommendations, setRecommendations] = useState([]);
+  const [museumResults, setMuseumResults] = useState([]);
   const [offset, setOffset] = useState(0);
   const [searchOffset, setSearchOffset] = useState(0);
+  const [museumOffset, setMuseumOffset] = useState(0);
   const [searchPage, setSearchPage] = useState(1);
+  const [museumPage, setMuseumPage] = useState(1);
   const [isSearchLoading, setIsSearchLoading] = useState(false);
   const [isRecommendationsLoading, setIsRecommendationsLoading] =
     useState(false);
   const [error, setError] = useState("");
   const [searchMode, setSearchMode] = useState("title");
+  const [radiusKm, setRadiusKm] = useState(5);
   const pageSize = 10;
   const navigate = useNavigate();
 
@@ -37,8 +41,12 @@ const Search = () => {
       results,
       artistResults,
       artistInfo,
+      museumResults,
       searchOffset,
       searchPage,
+      museumOffset,
+      museumPage,
+      radiusKm,
     };
     localStorage.setItem("searchState", JSON.stringify(searchState));
   };
@@ -52,17 +60,25 @@ const Search = () => {
         results: savedResults,
         artistResults: savedArtistResults,
         artistInfo: savedArtistInfo,
+        museumResults: savedMuseumResults,
         searchOffset: savedOffset,
         searchPage: savedPage,
+        museumOffset: savedMuseumOffset,
+        museumPage: savedMuseumPage,
+        radiusKm: savedRadiusKm,
       } = JSON.parse(savedState);
       setQuery(savedQuery || "");
       setSearchMode(savedMode || "title");
       setResults(savedResults || []);
       setArtistResults(savedArtistResults || []);
       setArtistInfo(savedArtistInfo || null);
+      setMuseumResults(savedMuseumResults || []);
       setSearchOffset(savedOffset || 0);
       setSearchPage(savedPage || 1);
-      return { savedQuery, savedMode, savedOffset };
+      setMuseumOffset(savedMuseumOffset || 0);
+      setMuseumPage(savedMuseumPage || 1);
+      setRadiusKm(savedRadiusKm || 5);
+      return { savedQuery, savedMode, savedOffset, savedRadiusKm };
     }
     return null;
   };
@@ -72,12 +88,15 @@ const Search = () => {
   };
 
   const renderCard = (item, index, type) => (
-    <div key={item.external_id || `${type}-${index}`} className="col-md-4 mb-4">
+    <div
+      key={item.id || item.external_id || `${type}-${index}`}
+      className="col-md-4 mb-4"
+    >
       <div className="card shadow-sm">
         {item.image && (
           <img
             src={getImageUrl(item.image)}
-            alt={item.title}
+            alt={type === "museum" ? item.name : item.title}
             className="card-img-top"
             style={{
               maxHeight: "200px",
@@ -87,19 +106,43 @@ const Search = () => {
           />
         )}
         <div className="card-body">
-          <h5 className="card-title">{item.title || "Untitled"}</h5>
-          <p className="card-text">
-            <strong>Artist:</strong> {item.author || "Unknown"}
-          </p>
-          <p className="card-text">
-            <strong>Museum:</strong> {item.museum || "Unknown"}
-          </p>
-          <Link
-            to={`/artpiece/${item.external_id}`}
-            className="btn btn-primary btn-sm"
-          >
-            View Details
-          </Link>
+          <h5 className="card-title">
+            {type === "museum" ? item.name : item.title || "Untitled"}
+          </h5>
+          {type === "museum" ? (
+            <>
+              {item.distance_km !== undefined && (
+                <p className="card-text">
+                  <strong>Distance:</strong> {item.distance_km.toFixed(2)} km
+                </p>
+              )}
+              {item.url && (
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-primary btn-sm"
+                >
+                  Visit Website
+                </a>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="card-text">
+                <strong>Artist:</strong> {item.author || "Unknown"}
+              </p>
+              <p className="card-text">
+                <strong>Museum:</strong> {item.museum || "Unknown"}
+              </p>
+              <Link
+                to={`/artpiece/${item.id || item.external_id}`}
+                className="btn btn-primary btn-sm"
+              >
+                View Details
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -147,7 +190,7 @@ const Search = () => {
         localStorage.removeItem("refreshToken");
         navigate("/login");
       } else {
-        setError(err.response?.data?.msg || "Error loading recommendations.");
+        setError(err.response?.data?.msg || "Error loading recommendations");
       }
     } finally {
       setIsRecommendationsLoading(false);
@@ -182,6 +225,7 @@ const Search = () => {
       setResults(validResults);
       setArtistResults([]);
       setArtistInfo(null);
+      setMuseumResults([]);
       setError("");
       saveSearchState();
     } catch (err) {
@@ -195,7 +239,7 @@ const Search = () => {
         localStorage.removeItem("refreshToken");
         navigate("/login");
       } else {
-        setError(err.response?.data?.msg || "Error searching artworks.");
+        setError(err.response?.data?.msg || "Error searching artworks");
       }
     } finally {
       setIsSearchLoading(false);
@@ -236,6 +280,7 @@ const Search = () => {
       setArtistResults(validArtworks);
       setArtistInfo(response.data.artist || null);
       setResults([]);
+      setMuseumResults([]);
       setError("");
       saveSearchState();
     } catch (err) {
@@ -251,11 +296,84 @@ const Search = () => {
       } else if (err.response?.status === 404) {
         setError(`Artist '${searchQuery}' not found.`);
       } else {
-        setError(err.response?.data?.msg || "Error searching artist artworks.");
+        setError(err.response?.data?.msg || "Error searching artist artworks");
       }
     } finally {
       setIsSearchLoading(false);
     }
+  };
+
+  const handleMuseumSearch = async (newOffset = 0, newRadius = radiusKm) => {
+    if (!navigator.geolocation) {
+      setError("Geolocation is not supported by your browser.");
+      return;
+    }
+
+    setIsSearchLoading(true);
+    setError("");
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+
+        try {
+          const response = await axios.get("/api/artpiece/nearby_museums", {
+            params: {
+              lat: latitude,
+              lon: longitude,
+              radius_km: newRadius,
+              offset: newOffset,
+              limit: pageSize,
+            },
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+          });
+          console.log("Museum search results:", response.data);
+          const seen = new Set();
+          const validMuseums = (response.data || []).filter((item) => {
+            if (!item?.name || !item?.id) return false;
+            if (!seen.has(item.id)) {
+              seen.add(item.id);
+              return true;
+            }
+            return false;
+          });
+          console.log("Unique museum results:", validMuseums);
+          setMuseumResults(validMuseums);
+          setResults([]);
+          setArtistResults([]);
+          setArtistInfo(null);
+          setRecommendations([]);
+          setSearchMode("museum");
+          setError(validMuseums.length ? "" : "No museums found nearby.");
+          saveSearchState();
+        } catch (err) {
+          console.error("Museum search error:", {
+            message: err.message,
+            response: err.response?.data || "No response",
+          });
+          if (err.response?.status === 401) {
+            setError("Session expired. Please log in again.");
+            localStorage.removeItem("token");
+            localStorage.removeItem("refreshToken");
+            navigate("/login");
+          } else if (err.response?.status === 400) {
+            setError("Invalid location parameters.");
+          } else {
+            setError(
+              err.response?.data?.msg || "Error searching nearby museums"
+            );
+          }
+        } finally {
+          setIsSearchLoading(false);
+        }
+      },
+      (err) => {
+        setError("Location access denied. Please enable location services.");
+        setIsSearchLoading(false);
+      }
+    );
   };
 
   const handleSearch = (e) => {
@@ -280,9 +398,21 @@ const Search = () => {
     );
     if (searchMode === "artist") {
       handleArtistSearch(null, newOffset);
-    } else {
+    } else if (searchMode === "title") {
       handleTitleSearch(null, newOffset);
     }
+  };
+
+  const handleMuseumPagination = (direction) => {
+    const newOffset =
+      direction === "next"
+        ? museumOffset + pageSize
+        : Math.max(museumOffset - pageSize, 0);
+    setMuseumOffset(newOffset);
+    setMuseumPage(
+      direction === "next" ? museumPage + 1 : Math.max(museumPage - 1, 1)
+    );
+    handleMuseumSearch(newOffset);
   };
 
   const handlePagination = (direction) => {
@@ -299,9 +429,23 @@ const Search = () => {
     setResults([]);
     setArtistResults([]);
     setArtistInfo(null);
+    setMuseumResults([]);
     setSearchOffset(0);
     setSearchPage(1);
+    setMuseumOffset(0);
+    setMuseumPage(1);
     setError("");
+    if (mode === "museum") {
+      handleMuseumSearch();
+    }
+  };
+
+  const handleRadiusChange = (e) => {
+    const newRadius = parseInt(e.target.value, 10);
+    setRadiusKm(newRadius);
+    setMuseumOffset(0);
+    setMuseumPage(1);
+    handleMuseumSearch(0, newRadius);
   };
 
   useEffect(() => {
@@ -309,7 +453,7 @@ const Search = () => {
     if (savedState && savedState.savedQuery?.trim()) {
       if (savedState.savedMode === "artist") {
         handleArtistSearch(null, savedState.savedOffset, savedState.savedQuery);
-      } else {
+      } else if (savedState.savedMode === "title") {
         handleTitleSearch(null, savedState.savedOffset, savedState.savedQuery);
       }
     }
@@ -324,9 +468,17 @@ const Search = () => {
           .btn-success:disabled {
             opacity: 1;
           }
+          .radius-slider {
+            width: 100%;
+            margin: 1rem 0;
+          }
+          .radius-label {
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
+          }
         `}
       </style>
-      <h2 className="mb-4">Search</h2>
+      <h2 className="mb-4">Search Artworks</h2>
       {error && <p className="text-danger mb-4">{error}</p>}
 
       {/* Search Bar */}
@@ -375,8 +527,10 @@ const Search = () => {
           Search by Artist
         </button>
         <button
-          className="btn btn-outline-primary me-2"
-          onClick={() => alert("Find Nearby Museums will be implemented soon!")}
+          className={`btn ${
+            searchMode === "museum" ? "btn-primary" : "btn-outline-primary"
+          } me-2`}
+          onClick={() => handleSearchMode("museum")}
         >
           Find Nearby Museums
         </button>
@@ -387,6 +541,23 @@ const Search = () => {
           Search by Museum
         </button>
       </div>
+
+      {/* Radius Slider for Museum Search */}
+      {searchMode === "museum" && (
+        <div className="mb-4">
+          <label className="radius-label">Search radius: {radiusKm} km</label>
+          <input
+            type="range"
+            className="radius-slider"
+            min="1"
+            max="50"
+            step="1"
+            value={radiusKm}
+            onChange={handleRadiusChange}
+            disabled={isSearchLoading}
+          />
+        </div>
+      )}
 
       {/* Artist Info */}
       {artistInfo && (
@@ -407,38 +578,69 @@ const Search = () => {
       )}
 
       {/* Results or Recommendations */}
-      {results.length > 0 || artistResults.length > 0 ? (
+      {results.length > 0 ||
+      artistResults.length > 0 ||
+      museumResults.length > 0 ? (
         <>
           <h4>
-            {searchMode === "artist" ? "Artist Artworks" : "Search Results"}
+            {searchMode === "artist"
+              ? "Artist Artworks"
+              : searchMode === "museum"
+              ? "Nearby Museums"
+              : "Search Results"}
           </h4>
           {isSearchLoading ? (
             <div className="text-center">
               <div className="spinner-border text-success" role="status">
                 <span className="visually-hidden">Loading...</span>
               </div>
-              <p>Loading search results...</p>
+              <p>
+                Loading {searchMode === "museum" ? "museums" : "search results"}
+                ...
+              </p>
             </div>
           ) : (
             <>
               <div className="row">
-                {(searchMode === "artist" ? artistResults : results).map(
-                  (item, index) => renderCard(item, index, searchMode)
+                {(searchMode === "artist"
+                  ? artistResults
+                  : searchMode === "museum"
+                  ? museumResults
+                  : results
+                ).map((item, index) =>
+                  renderCard(
+                    item,
+                    index,
+                    searchMode === "museum" ? "museum" : searchMode
+                  )
                 )}
               </div>
               <div className="d-flex justify-content-between">
                 <button
                   className="btn btn-secondary"
-                  onClick={() => handleSearchPagination("prev")}
-                  disabled={searchOffset === 0 || isSearchLoading}
+                  onClick={() =>
+                    searchMode === "museum"
+                      ? handleMuseumPagination("prev")
+                      : handleSearchPagination("prev")
+                  }
+                  disabled={
+                    (searchMode === "museum" ? museumOffset : searchOffset) ===
+                      0 || isSearchLoading
+                  }
                 >
                   Previous
                 </button>
                 <button
                   className="btn btn-secondary"
-                  onClick={() => handleSearchPagination("next")}
+                  onClick={() =>
+                    searchMode === "museum"
+                      ? handleMuseumPagination("next")
+                      : handleSearchPagination("next")
+                  }
                   disabled={
-                    (searchMode === "artist"
+                    (searchMode === "museum"
+                      ? museumResults.length
+                      : searchMode === "artist"
                       ? artistResults.length
                       : results.length) < pageSize || isSearchLoading
                   }
