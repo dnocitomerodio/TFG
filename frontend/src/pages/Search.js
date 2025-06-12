@@ -1,6 +1,31 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import axios from "../utils/api";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+// Fix default marker icons
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl:
+    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
+
+// Custom red marker icon for user location
+const redIcon = new L.Icon({
+  iconUrl:
+    "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
+  iconRetinaUrl:
+    "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+});
 
 const Search = () => {
   const [query, setQuery] = useState("");
@@ -25,6 +50,7 @@ const Search = () => {
   const [viewMode, setViewMode] = useState("main");
   const [radiusKm, setRadiusKm] = useState(5);
   const [currentMuseumId, setCurrentMuseumId] = useState(null);
+  const [userLocation, setUserLocation] = useState(null);
   const pageSize = 10;
   const navigate = useNavigate();
 
@@ -57,6 +83,7 @@ const Search = () => {
       museumArtworksPage,
       radiusKm,
       currentMuseumId,
+      userLocation,
     };
     localStorage.setItem("searchState", JSON.stringify(searchState));
   };
@@ -81,6 +108,7 @@ const Search = () => {
         museumArtworksPage: savedMuseumArtworksPage,
         radiusKm: savedRadiusKm,
         currentMuseumId: savedMuseumId,
+        userLocation: savedUserLocation,
       } = JSON.parse(savedState);
       setQuery(savedQuery || "");
       setSearchMode(savedMode || "title");
@@ -106,6 +134,7 @@ const Search = () => {
       setMuseumArtworksPage(savedMuseumArtworksPage || 1);
       setRadiusKm(savedRadiusKm || 5);
       setCurrentMuseumId(savedMuseumId || null);
+      setUserLocation(savedUserLocation || null);
       return {
         savedQuery,
         savedMode,
@@ -181,6 +210,24 @@ const Search = () => {
       </div>
     </div>
   );
+
+  const MapBounds = ({ userLocation, museums }) => {
+    const map = useMap();
+    useEffect(() => {
+      if (userLocation && museums.length) {
+        const bounds = L.latLngBounds([
+          [userLocation.lat, userLocation.lon],
+          ...museums
+            .filter((museum) => museum.latitude && museum.longitude)
+            .map((museum) => [museum.latitude, museum.longitude]),
+        ]);
+        map.fitBounds(bounds, { padding: [50, 50] });
+      } else if (userLocation) {
+        map.setView([userLocation.lat, userLocation.lon], 13);
+      }
+    }, [map, userLocation, museums]);
+    return null;
+  };
 
   const fetchRecommendations = async (newOffset) => {
     const token = localStorage.getItem("token");
@@ -364,6 +411,7 @@ const Search = () => {
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
+        setUserLocation({ lat: latitude, lon: longitude });
 
         try {
           const response = await axios.get("/api/artpiece/nearby_museums", {
@@ -730,6 +778,13 @@ const Search = () => {
             opacity: 0.6;
             cursor: not-allowed;
           }
+          .map-container {
+            height: 400px;
+            width: 100%;
+            margin-bottom: 1rem;
+            border: 1px solid #dee2e6;
+            border-radius: 0.25rem;
+          }
         `}
       </style>
       <h2 className="mb-4">Search Artworks</h2>
@@ -808,6 +863,50 @@ const Search = () => {
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Map for Nearby Museums */}
+      {searchMode === "museum" && viewMode === "main" && userLocation && (
+        <div className="map-container">
+          <MapContainer
+            center={[userLocation.lat, userLocation.lon]}
+            zoom={13}
+            style={{ height: "100%", width: "100%" }}
+          >
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            />
+            <MapBounds userLocation={userLocation} museums={allMuseumResults} />
+            <Marker
+              position={[userLocation.lat, userLocation.lon]}
+              icon={redIcon}
+            >
+              <Popup>Your Location</Popup>
+            </Marker>
+            {allMuseumResults
+              .filter((museum) => museum.latitude && museum.longitude)
+              .map((museum) => (
+                <Marker
+                  key={museum.id}
+                  position={[museum.latitude, museum.longitude]}
+                >
+                  <Popup>
+                    <strong>{museum.name}</strong>
+                    <br />
+                    Distance: {museum.distance_km?.toFixed(2)} km
+                    <br />
+                    <button
+                      className="btn btn-primary btn-sm mt-2"
+                      onClick={() => handleViewMuseum(museum.id)}
+                    >
+                      View Museum
+                    </button>
+                  </Popup>
+                </Marker>
+              ))}
+          </MapContainer>
         </div>
       )}
 
