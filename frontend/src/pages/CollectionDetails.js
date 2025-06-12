@@ -101,7 +101,7 @@ const CollectionDetails = () => {
             <div className="row">
               <div className="col-md-6">
                 <p className="card-text">
-                  <strong>ID:</strong> {artpiece._id || "Unknown"}
+                  <strong>ID:</strong> {artpiece.external_id || "Unknown"}
                 </p>
                 <p className="card-text">
                   <strong>Artist:</strong> {artpiece.author || "Unknown"}
