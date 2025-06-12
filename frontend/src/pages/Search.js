@@ -399,7 +399,11 @@ const Search = () => {
           setMuseumArtworks([]);
           setSearchMode("museum");
           setViewMode("main");
-          setError(validMuseums.length ? "" : "No museums found nearby.");
+          setError(
+            validMuseums.length
+              ? ""
+              : `No museums found within ${newRadius} km.`
+          );
           saveSearchState();
         } catch (err) {
           console.error("Museum search error:", {
@@ -625,8 +629,7 @@ const Search = () => {
     }
   };
 
-  const handleRadiusChange = (e) => {
-    const newRadius = parseInt(e.target.value, 10);
+  const handleRadiusChange = (newRadius) => {
     setRadiusKm(newRadius);
     setMuseumPage(1);
     handleMuseumSearch(newRadius);
@@ -702,13 +705,30 @@ const Search = () => {
           .btn-success:disabled {
             opacity: 1;
           }
-          .radius-slider {
-            width: 100%;
+          .radius-buttons {
+            display: flex;
+            gap: 0.5rem;
             margin: 1rem 0;
           }
-          .radius-label {
-            font-size: 1rem;
-            margin-bottom: 0.5rem;
+          .radius-button {
+            padding: 0.5rem 1rem;
+            border: 1px solid #007bff;
+            border-radius: 0.25rem;
+            background-color: #fff;
+            color: #007bff;
+            cursor: pointer;
+            transition: all 0.2s;
+          }
+          .radius-button.active {
+            background-color: #007bff;
+            color: #fff;
+          }
+          .radius-button:hover:not(.active) {
+            background-color: #e9ecef;
+          }
+          .radius-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
           }
         `}
       </style>
@@ -768,28 +788,26 @@ const Search = () => {
         >
           Find Nearby Museums
         </button>
-        <button
-          className="btn btn-outline-primary"
-          onClick={() => alert("Search by Museum will be implemented soon!")}
-        >
-          Search by Museum
-        </button>
       </div>
 
-      {/* Radius Slider for Museum Search */}
+      {/* Radius Buttons for Museum Search */}
       {searchMode === "museum" && viewMode === "main" && (
         <div className="mb-4">
-          <label className="radius-label">Search radius: {radiusKm} km</label>
-          <input
-            type="range"
-            className="radius-slider"
-            min="1"
-            max="50"
-            step="1"
-            value={radiusKm}
-            onChange={handleRadiusChange}
-            disabled={isSearchLoading}
-          />
+          <h6>Select search radius (km):</h6>
+          <div className="radius-buttons">
+            {[5, 10, 25, 50].map((radius) => (
+              <button
+                key={radius}
+                className={`radius-button ${
+                  radiusKm === radius ? "active" : ""
+                }`}
+                onClick={() => handleRadiusChange(radius)}
+                disabled={isSearchLoading}
+              >
+                {radius}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
