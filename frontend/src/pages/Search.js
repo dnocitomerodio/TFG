@@ -71,7 +71,7 @@ const Search = () => {
         results: savedResults,
         artistResults: savedArtistResults,
         artistInfo: savedArtistInfo,
-        allMuseumResults: savedAllMuseumResults,
+        allMuseumResults,
         museumResults: savedMuseumResults,
         allMuseumArtworks: savedAllMuseumArtworks,
         museumArtworks: savedMuseumArtworks,
@@ -89,7 +89,7 @@ const Search = () => {
       setArtistResults(savedArtistResults || []);
       setArtistInfo(savedArtistInfo || null);
       setAllMuseumResults(
-        Array.isArray(savedAllMuseumResults) ? savedAllMuseumResults : []
+        Array.isArray(allMuseumResults) ? allMuseumResults : []
       );
       setMuseumResults(
         Array.isArray(savedMuseumResults) ? savedMuseumResults : []
@@ -163,9 +163,11 @@ const Search = () => {
               <p className="card-text">
                 <strong>Artist:</strong> {item.author || "Unknown"}
               </p>
-              <p className="card-text">
-                <strong>Museum:</strong> {item.museum || "Unknown"}
-              </p>
+              {viewMode !== "museumArtworks" && (
+                <p className="card-text">
+                  <strong>Museum:</strong> {item.museum || "Unknown"}
+                </p>
+              )}
               <Link
                 to={`/artpiece/${item.id || item.external_id}`}
                 className="btn btn-primary btn-sm"
@@ -674,13 +676,11 @@ const Search = () => {
         }
       } else if (savedState.savedMode === "museum") {
         setAllMuseumResults(
-          Array.isArray(savedState.savedAllMuseumResults)
-            ? savedState.savedAllMuseumResults
-            : []
+          Array.isArray(allMuseumResults) ? allMuseumResults : []
         );
         setMuseumResults(
-          Array.isArray(savedState.savedAllMuseumResults)
-            ? savedState.savedAllMuseumResults.slice(
+          Array.isArray(allMuseumResults)
+            ? allMuseumResults.slice(
                 (savedState.savedMuseumPage - 1) * pageSize,
                 savedState.savedMuseumPage * pageSize
               )
@@ -815,7 +815,7 @@ const Search = () => {
       {artistInfo && viewMode === "main" && (
         <div className="mb-4">
           <h4>Artist: {artistInfo.label}</h4>
-          <p>{artistInfo.description || "No description available."}</p>
+          <p>{artistInfo?.description || "No description available."}</p>
           {artistInfo.wikipedia_url && (
             <a
               href={artistInfo.wikipedia_url}
