@@ -11,7 +11,9 @@ const Search = () => {
   const [offset, setOffset] = useState(0);
   const [searchOffset, setSearchOffset] = useState(0);
   const [searchPage, setSearchPage] = useState(1);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSearchLoading, setIsSearchLoading] = useState(false);
+  const [isRecommendationsLoading, setIsRecommendationsLoading] =
+    useState(false);
   const [error, setError] = useState("");
   const [searchMode, setSearchMode] = useState("title");
   const pageSize = 10;
@@ -60,7 +62,9 @@ const Search = () => {
       setArtistInfo(savedArtistInfo || null);
       setSearchOffset(savedOffset || 0);
       setSearchPage(savedPage || 1);
+      return { savedQuery, savedMode, savedOffset };
     }
+    return null;
   };
 
   const clearSearchState = () => {
@@ -112,7 +116,7 @@ const Search = () => {
       return;
     }
 
-    setIsLoading(true);
+    setIsRecommendationsLoading(true);
     try {
       const response = await axios.get("/api/artpiece/recommendations", {
         params: {
@@ -150,22 +154,23 @@ const Search = () => {
         setError(err.response?.data?.msg || "Error loading recommendations.");
       }
     } finally {
-      setIsLoading(false);
+      setIsRecommendationsLoading(false);
     }
   };
 
-  const handleTitleSearch = async (e, offset = 0) => {
+  const handleTitleSearch = async (e, offset = 0, overrideQuery = null) => {
     if (e) e.preventDefault();
-    if (!query.trim()) {
+    const searchQuery = overrideQuery !== null ? overrideQuery : query;
+    if (!searchQuery?.trim()) {
       setError("Please enter a search term.");
       return;
     }
 
-    setIsLoading(true);
+    setIsSearchLoading(true);
     try {
       const response = await axios.get("/api/artpiece/", {
         params: {
-          query,
+          query: searchQuery,
           limit: pageSize,
           offset,
           expand: true,
@@ -197,22 +202,23 @@ const Search = () => {
         setError(err.response?.data?.msg || "Error searching artworks.");
       }
     } finally {
-      setIsLoading(false);
+      setIsSearchLoading(false);
     }
   };
 
-  const handleArtistSearch = async (e, offset = 0) => {
+  const handleArtistSearch = async (e, offset = 0, overrideQuery = null) => {
     if (e) e.preventDefault();
-    if (!query.trim()) {
+    const searchQuery = overrideQuery !== null ? overrideQuery : query;
+    if (!searchQuery?.trim()) {
       setError("Please enter an artist name.");
       return;
     }
 
-    setIsLoading(true);
+    setIsSearchLoading(true);
     try {
       const response = await axios.get("/api/artpiece/artist", {
         params: {
-          query,
+          query: searchQuery,
           offset,
           limit: pageSize,
         },
@@ -247,12 +253,12 @@ const Search = () => {
         localStorage.removeItem("refreshToken");
         navigate("/login");
       } else if (err.response?.status === 404) {
-        setError(`Artist '${query}' not found.`);
+        setError(`Artist '${searchQuery}' not found.`);
       } else {
         setError(err.response?.data?.msg || "Error searching artist artworks.");
       }
     } finally {
-      setIsLoading(false);
+      setIsSearchLoading(false);
     }
   };
 
@@ -303,13 +309,27 @@ const Search = () => {
   };
 
   useEffect(() => {
-    loadSearchState();
+    const savedState = loadSearchState();
+    if (savedState && savedState.savedQuery?.trim()) {
+      if (savedState.savedMode === "artist") {
+        handleArtistSearch(null, savedState.savedOffset, savedState.savedQuery);
+      } else {
+        handleTitleSearch(null, savedState.savedOffset, savedState.savedQuery);
+      }
+    }
     fetchRecommendations(offset);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
 
   return (
     <div className="container mt-5">
+      <style>
+        {`
+          .btn-success:disabled {
+            opacity: 1;
+          }
+        `}
+      </style>
       <h2 className="mb-4">Search Artworks</h2>
       {error && <p className="text-danger mb-4">{error}</p>}
 
@@ -331,9 +351,9 @@ const Search = () => {
             <button
               className="btn btn-success"
               type="submit"
-              disabled={isLoading}
+              disabled={isSearchLoading}
             >
-              {isLoading ? "Searching..." : "Search"}
+              {isSearchLoading ? "Searching..." : "Search"}
             </button>
           </div>
         </form>
@@ -396,36 +416,47 @@ const Search = () => {
           <h4>
             {searchMode === "artist" ? "Artist Artworks" : "Search Results"}
           </h4>
-          <div className="row">
-            {(searchMode === "artist" ? artistResults : results).map(
-              (item, index) => renderCard(item, index, searchMode)
-            )}
-          </div>
-          <div className="d-flex justify-content-between">
-            <button
-              className="btn btn-secondary"
-              onClick={() => handleSearchPagination("prev")}
-              disabled={searchOffset === 0 || isLoading}
-            >
-              Previous
-            </button>
-            <button
-              className="btn btn-secondary"
-              onClick={() => handleSearchPagination("next")}
-              disabled={
-                (searchMode === "artist"
-                  ? artistResults.length
-                  : results.length) < pageSize || isLoading
-              }
-            >
-              Next
-            </button>
-          </div>
+          {isSearchLoading ? (
+            <div className="text-center">
+              <div className="spinner-border text-success" role="status">
+                <span className="visually-hidden">Loading...</span>
+              </div>
+              <p>Loading search results...</p>
+            </div>
+          ) : (
+            <>
+              <div className="row">
+                {(searchMode === "artist" ? artistResults : results).map(
+                  (item, index) => renderCard(item, index, searchMode)
+                )}
+              </div>
+              <div className="d-flex justify-content-between">
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => handleSearchPagination("prev")}
+                  disabled={searchOffset === 0 || isSearchLoading}
+                >
+                  Previous
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => handleSearchPagination("next")}
+                  disabled={
+                    (searchMode === "artist"
+                      ? artistResults.length
+                      : results.length) < pageSize || isSearchLoading
+                  }
+                >
+                  Next
+                </button>
+              </div>
+            </>
+          )}
         </>
       ) : (
         <>
           <h4>Recommended Artworks</h4>
-          {isLoading ? (
+          {isRecommendationsLoading ? (
             <div className="text-center">
               <div className="spinner-border text-success" role="status">
                 <span className="visually-hidden">Loading...</span>
@@ -443,14 +474,17 @@ const Search = () => {
                 <button
                   className="btn btn-secondary"
                   onClick={() => handlePagination("prev")}
-                  disabled={offset === 0 || isLoading}
+                  disabled={offset === 0 || isRecommendationsLoading}
                 >
                   Previous
                 </button>
                 <button
                   className="btn btn-secondary"
                   onClick={() => handlePagination("next")}
-                  disabled={recommendations.length < pageSize || isLoading}
+                  disabled={
+                    recommendations.length < pageSize ||
+                    isRecommendationsLoading
+                  }
                 >
                   Next
                 </button>
