@@ -5,6 +5,7 @@ import Register from "./pages/Register";
 import Callback from "./pages/Callback";
 import ForgotPassword from "./pages/ForgotPassword";
 import Search from "./pages/Search";
+import ArtPieceDetails from "./pages/ArtPieceDetails";
 import NotFound from "./pages/NotFound";
 import About from "./pages/About";
 import Contact from "./pages/Contact";
@@ -20,6 +21,7 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/callback" element={<Callback />} />
         <Route path="/search" element={<Search />} />
+        <Route path="/artpiece/:external_id" element={<ArtPieceDetails />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/about" element={<About />} />
         <Route path="/collection" element={<UserCollection />} />

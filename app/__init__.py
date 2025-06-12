@@ -20,7 +20,7 @@ def create_app():
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
     CORS(app, resources={
-        r"/api/*": {
+        r"/*": {
             "origins": ["http://localhost:3000"],
             "methods": ["GET", "POST", "DELETE", "PUT", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization"],
@@ -40,12 +40,20 @@ def create_app():
         'default-src': ["'self'"],
         'script-src': ["'self'", "'unsafe-inline'", "https://accounts.google.com"],
         'style-src': ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
-        'img-src': ["'self'", "data:", "https://commons.wikimedia.org"],
-        'connect-src': ["'self'", "http://localhost:5000", "https://accounts.google.com"]
-    })
+        'img-src': ["'self'", "data:", "https://commons.wikimedia.org", "https://upload.wikimedia.org"],
+        'connect-src': ["'self'", "http://localhost:5000", "https://accounts.google.com", "http://localhost:3000"]
+    }, force_https=False if os.getenv("FLASK_ENV") == "development" else True)
 
     @app.before_request
     def before_request():
+        # Handle OPTIONS requests explicitly
+        if request.method == "OPTIONS":
+            response = jsonify({"status": "OK"})
+            response.headers.add("Access-Control-Allow-Origin", "http://localhost:3000")
+            response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+            response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            response.headers.add("Access-Control-Allow-Credentials", "true")
+            return response
         if not request.is_secure and os.getenv("FLASK_ENV") != "development":
             return jsonify({"msg": "HTTPS required"}), 403
 

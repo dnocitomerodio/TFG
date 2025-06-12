@@ -239,7 +239,7 @@ const Search = () => {
                       <strong>Museum:</strong> {item.museum || "Unknown"}
                     </p>
                     <Link
-                      to={`/collection/${item.external_id}`}
+                      to={`/artpiece/${item.external_id}`}
                       className="btn btn-primary btn-sm"
                     >
                       View Details
@@ -315,7 +315,7 @@ const Search = () => {
                           <strong>Museum:</strong> {item.museum || "Unknown"}
                         </p>
                         <Link
-                          to={`/collection/${item.external_id}`}
+                          to={`/artpiece/${item.external_id}`}
                           className="btn btn-primary btn-sm"
                         >
                           View Details
