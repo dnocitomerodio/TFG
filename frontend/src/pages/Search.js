@@ -94,10 +94,6 @@ const Search = () => {
           <p className="card-text">
             <strong>Museum:</strong> {item.museum || "Unknown"}
           </p>
-          <p className="card-text">
-            <strong>Description:</strong>{" "}
-            {item.description || "No description available"}
-          </p>
           <Link
             to={`/artpiece/${item.external_id}`}
             className="btn btn-primary btn-sm"
@@ -330,7 +326,7 @@ const Search = () => {
           }
         `}
       </style>
-      <h2 className="mb-4">Search Artworks</h2>
+      <h2 className="mb-4">Search</h2>
       {error && <p className="text-danger mb-4">{error}</p>}
 
       {/* Search Bar */}
@@ -463,7 +459,7 @@ const Search = () => {
               </div>
               <p>Loading recommendations...</p>
             </div>
-          ) : recommendations.length > 0 ? (
+          ) : recommendations.length ? (
             <>
               <div className="row">
                 {recommendations.map((item, index) =>
