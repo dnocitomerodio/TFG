@@ -8,12 +8,12 @@ const Search = () => {
   const [artistResults, setArtistResults] = useState([]);
   const [artistInfo, setArtistInfo] = useState(null);
   const [recommendations, setRecommendations] = useState([]);
+  const [allMuseumResults, setAllMuseumResults] = useState([]);
   const [museumResults, setMuseumResults] = useState([]);
+  const [allMuseumArtworks, setAllMuseumArtworks] = useState([]);
   const [museumArtworks, setMuseumArtworks] = useState([]);
   const [offset, setOffset] = useState(0);
   const [searchOffset, setSearchOffset] = useState(0);
-  const [museumOffset, setMuseumOffset] = useState(0);
-  const [museumArtworksOffset, setMuseumArtworksOffset] = useState(0);
   const [searchPage, setSearchPage] = useState(1);
   const [museumPage, setMuseumPage] = useState(1);
   const [museumArtworksPage, setMuseumArtworksPage] = useState(1);
@@ -36,7 +36,7 @@ const Search = () => {
       const fileName = image.replace("commons:", "");
       return `https://commons.wikimedia.org/wiki/Special:FilePath/${fileName}?width=200`;
     }
-    return image || "https://via.placeholder.com/200x200.png?text=No+Image";
+    return image && image !== "" ? image : "https://picsum.photos/300/200.jpg";
   };
 
   const saveSearchState = () => {
@@ -47,13 +47,13 @@ const Search = () => {
       results,
       artistResults,
       artistInfo,
+      allMuseumResults,
       museumResults,
+      allMuseumArtworks,
       museumArtworks,
       searchOffset,
       searchPage,
-      museumOffset,
       museumPage,
-      museumArtworksOffset,
       museumArtworksPage,
       radiusKm,
       currentMuseumId,
@@ -71,13 +71,13 @@ const Search = () => {
         results: savedResults,
         artistResults: savedArtistResults,
         artistInfo: savedArtistInfo,
+        allMuseumResults: savedAllMuseumResults,
         museumResults: savedMuseumResults,
+        allMuseumArtworks: savedAllMuseumArtworks,
         museumArtworks: savedMuseumArtworks,
         searchOffset: savedOffset,
         searchPage: savedPage,
-        museumOffset: savedMuseumOffset,
         museumPage: savedMuseumPage,
-        museumArtworksOffset: savedMuseumArtworksOffset,
         museumArtworksPage: savedMuseumArtworksPage,
         radiusKm: savedRadiusKm,
         currentMuseumId: savedMuseumId,
@@ -88,23 +88,33 @@ const Search = () => {
       setResults(savedResults || []);
       setArtistResults(savedArtistResults || []);
       setArtistInfo(savedArtistInfo || null);
-      setMuseumResults(savedMuseumResults || []);
-      setMuseumArtworks(savedMuseumArtworks || []);
+      setAllMuseumResults(
+        Array.isArray(savedAllMuseumResults) ? savedAllMuseumResults : []
+      );
+      setMuseumResults(
+        Array.isArray(savedMuseumResults) ? savedMuseumResults : []
+      );
+      setAllMuseumArtworks(
+        Array.isArray(savedAllMuseumArtworks) ? savedAllMuseumArtworks : []
+      );
+      setMuseumArtworks(
+        Array.isArray(savedMuseumArtworks) ? savedMuseumArtworks : []
+      );
       setSearchOffset(savedOffset || 0);
       setSearchPage(savedPage || 1);
-      setMuseumOffset(savedMuseumOffset || 0);
       setMuseumPage(savedMuseumPage || 1);
-      setMuseumArtworksOffset(savedMuseumArtworksOffset || 0);
       setMuseumArtworksPage(savedMuseumArtworksPage || 1);
       setRadiusKm(savedRadiusKm || 5);
       setCurrentMuseumId(savedMuseumId || null);
       return {
         savedQuery,
         savedMode,
-        savedOffset,
         savedRadiusKm,
         savedViewMode,
         savedMuseumId,
+        savedOffset,
+        savedMuseumPage,
+        savedMuseumArtworksPage,
       };
     }
     return null;
@@ -120,18 +130,16 @@ const Search = () => {
       className="col-md-4 mb-4"
     >
       <div className="card shadow-sm">
-        {item.image && (
-          <img
-            src={getImageUrl(item.image)}
-            alt={type === "museum" ? item.name : item.title}
-            className="card-img-top"
-            style={{
-              maxHeight: "200px",
-              objectFit: "contain",
-              padding: "0.5rem",
-            }}
-          />
-        )}
+        <img
+          src={getImageUrl(item.image)}
+          alt={type === "museum" ? item.name : item.title}
+          className="card-img-top"
+          style={{
+            maxHeight: "200px",
+            objectFit: "contain",
+            padding: "0.5rem",
+          }}
+        />
         <div className="card-body">
           <h5 className="card-title">
             {type === "museum" ? item.name : item.title || "Untitled"}
@@ -190,8 +198,13 @@ const Search = () => {
         headers: {
           Authorization: `Bearer ${token}`,
         },
+        cache: "no-store",
       });
-      console.log("Recommendations data:", response.data);
+      console.log(
+        "Recommendations fetched with offset:",
+        newOffset,
+        response.data
+      );
       const validRecommendations = (response.data || []).filter(
         (item) => item?.external_id
       );
@@ -241,15 +254,18 @@ const Search = () => {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
+        cache: "no-store",
       });
-      console.log("Title search results:", response.data);
+      console.log("Title search results with offset:", offset, response.data);
       const validResults = (response.data || []).filter(
         (item) => item?.external_id
       );
       setResults(validResults);
       setArtistResults([]);
       setArtistInfo(null);
+      setAllMuseumResults([]);
       setMuseumResults([]);
+      setAllMuseumArtworks([]);
       setMuseumArtworks([]);
       setViewMode("main");
       setError("");
@@ -291,8 +307,9 @@ const Search = () => {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
+        cache: "no-store",
       });
-      console.log("Artist search results:", response.data);
+      console.log("Artist search results with offset:", offset, response.data);
       const seen = new Set();
       const validArtworks = (response.data.artworks || []).filter((item) => {
         if (!item?.external_id) return false;
@@ -306,7 +323,9 @@ const Search = () => {
       setArtistResults(validArtworks);
       setArtistInfo(response.data.artist || null);
       setResults([]);
+      setAllMuseumResults([]);
       setMuseumResults([]);
+      setAllMuseumArtworks([]);
       setMuseumArtworks([]);
       setViewMode("main");
       setError("");
@@ -331,7 +350,7 @@ const Search = () => {
     }
   };
 
-  const handleMuseumSearch = async (newOffset = 0, newRadius = radiusKm) => {
+  const handleMuseumSearch = async (newRadius = radiusKm) => {
     if (!navigator.geolocation) {
       setError("Geolocation is not supported by your browser.");
       return;
@@ -350,16 +369,17 @@ const Search = () => {
               lat: latitude,
               lon: longitude,
               radius_km: newRadius,
-              offset: newOffset,
-              limit: pageSize,
             },
             headers: {
               Authorization: `Bearer ${localStorage.getItem("token")}`,
             },
+            cache: "no-store",
           });
           console.log("Museum search results:", response.data);
           const seen = new Set();
-          const validMuseums = (response.data || []).filter((item) => {
+          const validMuseums = (
+            Array.isArray(response.data) ? response.data : []
+          ).filter((item) => {
             if (!item?.name || !item?.id) return false;
             if (!seen.has(item.id)) {
               seen.add(item.id);
@@ -368,11 +388,14 @@ const Search = () => {
             return false;
           });
           console.log("Unique museum results:", validMuseums);
-          setMuseumResults(validMuseums);
+          setAllMuseumResults(validMuseums);
+          setMuseumResults(validMuseums.slice(0, pageSize));
+          setMuseumPage(1);
           setResults([]);
           setArtistResults([]);
           setArtistInfo(null);
           setRecommendations([]);
+          setAllMuseumArtworks([]);
           setMuseumArtworks([]);
           setSearchMode("museum");
           setViewMode("main");
@@ -400,13 +423,33 @@ const Search = () => {
         }
       },
       (err) => {
-        setError("Location access denied. Please enable location services.");
+        console.error("Geolocation error:", {
+          code: err.code,
+          message: err.message,
+        });
+        let errorMessage;
+        switch (err.code) {
+          case err.PERMISSION_DENIED:
+            errorMessage =
+              "Location access denied. Please enable location services.";
+            break;
+          case err.POSITION_UNAVAILABLE:
+            errorMessage =
+              "Unable to retrieve location. The geolocation service may be temporarily unavailable.";
+            break;
+          case err.TIMEOUT:
+            errorMessage = "Location request timed out. Please try again.";
+            break;
+          default:
+            errorMessage = "An error occurred while retrieving your location.";
+        }
+        setError(errorMessage);
         setIsSearchLoading(false);
       }
     );
   };
 
-  const handleViewMuseum = async (museumId, offset = 0) => {
+  const handleViewMuseum = async (museumId) => {
     setIsSearchLoading(true);
     setError("");
     setCurrentMuseumId(museumId);
@@ -415,18 +458,17 @@ const Search = () => {
       const response = await axios.get(
         `/api/artpiece/museum_works/${museumId}`,
         {
-          params: {
-            offset,
-            limit: pageSize,
-          },
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token")}`,
           },
+          cache: "no-store",
         }
       );
       console.log("Museum artworks results:", response.data);
       const seen = new Set();
-      const validArtworks = (response.data.artworks || []).filter((item) => {
+      const validArtworks = (
+        Array.isArray(response.data.artworks) ? response.data.artworks : []
+      ).filter((item) => {
         if (!item?.external_id) return false;
         if (!seen.has(item.external_id)) {
           seen.add(item.external_id);
@@ -435,10 +477,10 @@ const Search = () => {
         return false;
       });
       console.log("Unique museum artworks:", validArtworks);
-      setMuseumArtworks(validArtworks);
+      setAllMuseumArtworks(validArtworks);
+      setMuseumArtworks(validArtworks.slice(0, pageSize));
+      setMuseumArtworksPage(1);
       setViewMode("museumArtworks");
-      setMuseumArtworksOffset(offset);
-      setMuseumArtworksPage(offset / pageSize + 1);
       setError(
         validArtworks.length ? "" : "No artworks found for this museum."
       );
@@ -462,26 +504,39 @@ const Search = () => {
   };
 
   const handleMuseumArtworksPagination = (direction) => {
-    const newOffset =
-      direction === "next"
-        ? museumArtworksOffset + pageSize
-        : Math.max(museumArtworksOffset - pageSize, 0);
-    setMuseumArtworksOffset(newOffset);
-    setMuseumArtworksPage(
+    const newPage =
       direction === "next"
         ? museumArtworksPage + 1
-        : Math.max(museumArtworksPage - 1, 1)
+        : Math.max(museumArtworksPage - 1, 1);
+    console.log("Museum artworks pagination:", {
+      direction,
+      newPage,
+      totalItems: allMuseumArtworks.length,
+    });
+    setMuseumArtworksPage(newPage);
+    setMuseumArtworks(
+      Array.isArray(allMuseumArtworks)
+        ? allMuseumArtworks.slice((newPage - 1) * pageSize, newPage * pageSize)
+        : []
     );
-    handleViewMuseum(currentMuseumId, newOffset);
+    saveSearchState();
   };
 
   const handleBackToMuseums = () => {
+    setAllMuseumArtworks([]);
     setMuseumArtworks([]);
-    setMuseumArtworksOffset(0);
     setMuseumArtworksPage(1);
     setCurrentMuseumId(null);
     setViewMode("main");
     setError("");
+    setMuseumResults(
+      Array.isArray(allMuseumResults)
+        ? allMuseumResults.slice(
+            (museumPage - 1) * pageSize,
+            museumPage * pageSize
+          )
+        : []
+    );
     saveSearchState();
   };
 
@@ -489,8 +544,8 @@ const Search = () => {
     clearSearchState();
     setSearchOffset(0);
     setSearchPage(1);
+    setAllMuseumArtworks([]);
     setMuseumArtworks([]);
-    setMuseumArtworksOffset(0);
     setMuseumArtworksPage(1);
     setCurrentMuseumId(null);
     setViewMode("main");
@@ -506,6 +561,11 @@ const Search = () => {
       direction === "next"
         ? searchOffset + pageSize
         : Math.max(searchOffset - pageSize, 0);
+    console.log("Search pagination:", {
+      direction,
+      newOffset,
+      currentPage: searchPage,
+    });
     setSearchOffset(newOffset);
     setSearchPage(
       direction === "next" ? searchPage + 1 : Math.max(searchPage - 1, 1)
@@ -518,20 +578,26 @@ const Search = () => {
   };
 
   const handleMuseumPagination = (direction) => {
-    const newOffset =
-      direction === "next"
-        ? museumOffset + pageSize
-        : Math.max(museumOffset - pageSize, 0);
-    setMuseumOffset(newOffset);
-    setMuseumPage(
-      direction === "next" ? museumPage + 1 : Math.max(museumPage - 1, 1)
+    const newPage =
+      direction === "next" ? museumPage + 1 : Math.max(museumPage - 1, 1);
+    console.log("Museum pagination:", {
+      direction,
+      newPage,
+      totalItems: allMuseumResults.length,
+    });
+    setMuseumPage(newPage);
+    setMuseumResults(
+      Array.isArray(allMuseumResults)
+        ? allMuseumResults.slice((newPage - 1) * pageSize, newPage * pageSize)
+        : []
     );
-    handleMuseumSearch(newOffset);
+    saveSearchState();
   };
 
   const handlePagination = (direction) => {
     const newOffset =
       direction === "next" ? offset + pageSize : Math.max(offset - pageSize, 0);
+    console.log("Recommendations pagination:", { direction, newOffset });
     setOffset(newOffset);
     fetchRecommendations(newOffset);
   };
@@ -543,13 +609,13 @@ const Search = () => {
     setResults([]);
     setArtistResults([]);
     setArtistInfo(null);
+    setAllMuseumResults([]);
     setMuseumResults([]);
+    setAllMuseumArtworks([]);
     setMuseumArtworks([]);
     setSearchOffset(0);
     setSearchPage(1);
-    setMuseumOffset(0);
     setMuseumPage(1);
-    setMuseumArtworksOffset(0);
     setMuseumArtworksPage(1);
     setViewMode("main");
     setCurrentMuseumId(null);
@@ -562,9 +628,8 @@ const Search = () => {
   const handleRadiusChange = (e) => {
     const newRadius = parseInt(e.target.value, 10);
     setRadiusKm(newRadius);
-    setMuseumOffset(0);
     setMuseumPage(1);
-    handleMuseumSearch(0, newRadius);
+    handleMuseumSearch(newRadius);
   };
 
   useEffect(() => {
@@ -574,10 +639,22 @@ const Search = () => {
         savedState.savedViewMode === "museumArtworks" &&
         savedState.savedMuseumId
       ) {
-        handleViewMuseum(
-          savedState.savedMuseumId,
-          savedState.savedMuseumArtworksOffset || 0
+        setAllMuseumArtworks(
+          Array.isArray(savedState.savedAllMuseumArtworks)
+            ? savedState.savedAllMuseumArtworks
+            : []
         );
+        setMuseumArtworks(
+          Array.isArray(savedState.savedAllMuseumArtworks)
+            ? savedState.savedAllMuseumArtworks.slice(
+                (savedState.savedMuseumArtworksPage - 1) * pageSize,
+                savedState.savedMuseumArtworksPage * pageSize
+              )
+            : []
+        );
+        setCurrentMuseumId(savedState.savedMuseumId);
+        setMuseumArtworksPage(savedState.savedMuseumArtworksPage || 1);
+        setViewMode("museumArtworks");
       } else if (savedState.savedQuery?.trim()) {
         if (savedState.savedMode === "artist") {
           handleArtistSearch(
@@ -593,10 +670,23 @@ const Search = () => {
           );
         }
       } else if (savedState.savedMode === "museum") {
-        handleMuseumSearch(
-          savedState.savedMuseumOffset || 0,
-          savedState.savedRadiusKm || 5
+        setAllMuseumResults(
+          Array.isArray(savedState.savedAllMuseumResults)
+            ? savedState.savedAllMuseumResults
+            : []
         );
+        setMuseumResults(
+          Array.isArray(savedState.savedAllMuseumResults)
+            ? savedState.savedAllMuseumResults.slice(
+                (savedState.savedMuseumPage - 1) * pageSize,
+                savedState.savedMuseumPage * pageSize
+              )
+            : []
+        );
+        setMuseumPage(savedState.savedMuseumPage || 1);
+        setRadiusKm(savedState.savedRadiusKm || 5);
+        setSearchMode("museum");
+        setViewMode("main");
       }
     }
     if (!museumArtworks.length) {
@@ -749,14 +839,17 @@ const Search = () => {
                 <button
                   className="btn btn-secondary"
                   onClick={() => handleMuseumArtworksPagination("prev")}
-                  disabled={museumArtworksOffset === 0 || isSearchLoading}
+                  disabled={museumArtworksPage === 1 || isSearchLoading}
                 >
                   Previous
                 </button>
                 <button
                   className="btn btn-secondary"
                   onClick={() => handleMuseumArtworksPagination("next")}
-                  disabled={museumArtworks.length < pageSize || isSearchLoading}
+                  disabled={
+                    museumArtworksPage * pageSize >= allMuseumArtworks.length ||
+                    isSearchLoading
+                  }
                 >
                   Next
                 </button>
@@ -810,8 +903,8 @@ const Search = () => {
                       : handleSearchPagination("prev")
                   }
                   disabled={
-                    (searchMode === "museum" ? museumOffset : searchOffset) ===
-                      0 || isSearchLoading
+                    (searchMode === "museum" ? museumPage : searchPage) === 1 ||
+                    isSearchLoading
                   }
                 >
                   Previous
@@ -825,10 +918,10 @@ const Search = () => {
                   }
                   disabled={
                     (searchMode === "museum"
-                      ? museumResults.length
+                      ? museumPage * pageSize >= allMuseumResults.length
                       : searchMode === "artist"
-                      ? artistResults.length
-                      : results.length) < pageSize || isSearchLoading
+                      ? artistResults.length < pageSize
+                      : results.length < pageSize) || isSearchLoading
                   }
                 >
                   Next
