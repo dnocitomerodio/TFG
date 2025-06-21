@@ -43,6 +43,10 @@ const UserProfile = () => {
       setNotificationRadius(response.data.notification_radius ?? 100);
       setLatitude(response.data.last_location?.lat ?? "");
       setLongitude(response.data.last_location?.lon ?? "");
+      console.log(
+        "Fetched notification_frequency:",
+        response.data.notification_frequency
+      ); // Debug
       setError("");
     } catch (err) {
       console.error("Profile fetch error:", err);
@@ -219,11 +223,13 @@ const UserProfile = () => {
           lon: parseFloat(longitude),
         };
       }
+      console.log("Sending notification settings:", settings); // Debug
       const response = await axios.put("/api/user/settings", settings, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setSuccess(response.data.msg);
-      await fetchProfile();
+      // Delay re-fetch to ensure backend update propagates
+      setTimeout(() => fetchProfile(), 500);
     } catch (err) {
       console.error("Update notification settings error:", err);
       if (err.response?.status === 401) {
@@ -363,6 +369,15 @@ const UserProfile = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin]);
 
+  // Map notification frequency values to display names
+  const frequencyDisplay = {
+    60: "Hourly",
+    360: "Every 6 Hours",
+    720: "Every 12 Hours",
+    1440: "Daily",
+    10080: "Weekly",
+  };
+
   return (
     <div className="container mt-5">
       <style>
@@ -416,7 +431,8 @@ const UserProfile = () => {
               </p>
               <p>
                 <strong>Notification Frequency:</strong>{" "}
-                {profile.notification_frequency === 1440 ? "Daily" : "Weekly"}
+                {frequencyDisplay[profile.notification_frequency] ||
+                  profile.notification_frequency + " minutes"}
               </p>
               <p>
                 <strong>Notification Radius:</strong>{" "}
@@ -479,6 +495,9 @@ const UserProfile = () => {
                     value={notificationFrequency}
                     onChange={(e) => setNotificationFrequency(e.target.value)}
                   >
+                    <option value={60}>Hourly</option>
+                    <option value={360}>Every 6 Hours</option>
+                    <option value={720}>Every 12 Hours</option>
                     <option value={1440}>Daily</option>
                     <option value={10080}>Weekly</option>
                   </select>
@@ -556,7 +575,7 @@ const UserProfile = () => {
                     id="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    required=""
+                    required
                   />
                 </div>
                 <div className="mb-3">
