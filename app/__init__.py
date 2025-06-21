@@ -95,7 +95,7 @@ def create_app():
     scheduler = BackgroundScheduler(timezone="Europe/Madrid")
     scheduler.add_job(
         check_nearby_artworks,
-        trigger=CronTrigger(hour=8, minute=0),
+        trigger=CronTrigger(minute="*/1"),
         id="notify_users_daily",
         replace_existing=True
     )

@@ -12,7 +12,6 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 external_api = ExternalAPI("https://query.wikidata.org/sparql")
 
 def send_notification_email(email, nearby_artworks):
-    """Send an email listing nearby artworks to the user."""
     if not nearby_artworks:
         return
 
@@ -37,7 +36,6 @@ def send_notification_email(email, nearby_artworks):
         log_user_action(email, f"Failed to send notification email: {str(e)}")
 
 def check_nearby_artworks():
-    """Check for nearby artworks for all eligible users and send notifications. Scheduled to run daily."""
     users = mongo.db.users.find({
         "notifications_enabled": True,
         "last_location.lat": {"$exists": True},
@@ -50,10 +48,22 @@ def check_nearby_artworks():
         if not external_ids:
             continue
 
+        frequency_minutes = user.get("notification_frequency", 1440)
+        last_notified = user.get("last_notified_artworks", [])
+        if last_notified:
+            latest_notification = max(
+                last_notified,
+                key=lambda x: datetime.fromisoformat(x["timestamp"]),
+                default=None
+            )
+            if latest_notification:
+                last_notification_time = datetime.fromisoformat(latest_notification["timestamp"])
+                if datetime.utcnow() - last_notification_time < timedelta(minutes=frequency_minutes):
+                    continue
+
         lat = user["last_location"].get("lat")
         lon = user["last_location"].get("lon")
         radius_km = user.get("notification_radius", 100.0)
-        last_notified = user.get("last_notified_artworks", [])
 
         seven_days_ago = datetime.utcnow() - timedelta(days=7)
         notified_ids = {
