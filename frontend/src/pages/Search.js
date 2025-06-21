@@ -1,11 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import axios from "../utils/api";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Popup,
+  useMap,
+  Circle,
+} from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-// Fix default marker icons
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl:
@@ -14,7 +20,6 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
-// Custom red marker icon for user location
 const redIcon = new L.Icon({
   iconUrl:
     "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
@@ -26,6 +31,57 @@ const redIcon = new L.Icon({
   popupAnchor: [1, -34],
   shadowSize: [41, 41],
 });
+
+const SearchRadiusCircle = ({ userLocation, radiusKm }) => {
+  // eslint-disable-next-line no-unused-vars
+  const map = useMap();
+  if (!userLocation) return null;
+  return (
+    <Circle
+      center={[userLocation.lat, userLocation.lon]}
+      radius={radiusKm * 1000}
+      pathOptions={{
+        color: "#007bff",
+        fillColor: "#007bff",
+        fillOpacity: 0.2,
+        weight: 2,
+      }}
+    >
+      <Popup>Search radius: {radiusKm} km</Popup>
+    </Circle>
+  );
+};
+
+const MapBounds = ({ userLocation, museums, radiusKm }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (userLocation && museums.length) {
+      const museumBounds = L.latLngBounds(
+        museums
+          .filter((museum) => museum.latitude && museum.longitude)
+          .map((museum) => [museum.latitude, museum.longitude])
+      );
+      const radiusInDegrees = radiusKm / 111;
+      const radiusBounds = L.latLngBounds([
+        [
+          userLocation.lat - radiusInDegrees,
+          userLocation.lon - radiusInDegrees,
+        ],
+        [
+          userLocation.lat + radiusInDegrees,
+          userLocation.lon + radiusInDegrees,
+        ],
+      ]);
+      const combinedBounds = museumBounds
+        .extend([userLocation.lat, userLocation.lon])
+        .extend(radiusBounds);
+      map.fitBounds(combinedBounds, { padding: [50, 50] });
+    } else if (userLocation) {
+      map.setView([userLocation.lat, userLocation.lon], 13);
+    }
+  }, [map, userLocation, museums, radiusKm]);
+  return null;
+};
 
 const Search = () => {
   const [query, setQuery] = useState("");
@@ -49,6 +105,7 @@ const Search = () => {
   const [searchMode, setSearchMode] = useState("title");
   const [viewMode, setViewMode] = useState("main");
   const [radiusKm, setRadiusKm] = useState(5);
+  const [customRadius, setCustomRadius] = useState("");
   const [currentMuseumId, setCurrentMuseumId] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
   const pageSize = 10;
@@ -82,13 +139,14 @@ const Search = () => {
       museumPage,
       museumArtworksPage,
       radiusKm,
+      customRadius,
       currentMuseumId,
       userLocation,
     };
     localStorage.setItem("searchState", JSON.stringify(searchState));
   };
 
-  const loadSearchState = () => {
+  const loadSearchResult = () => {
     const savedState = localStorage.getItem("searchState");
     if (savedState) {
       const {
@@ -107,6 +165,7 @@ const Search = () => {
         museumPage: savedMuseumPage,
         museumArtworksPage: savedMuseumArtworksPage,
         radiusKm: savedRadiusKm,
+        customRadius: savedCustomRadius,
         currentMuseumId: savedMuseumId,
         userLocation: savedUserLocation,
       } = JSON.parse(savedState);
@@ -133,12 +192,14 @@ const Search = () => {
       setMuseumPage(savedMuseumPage || 1);
       setMuseumArtworksPage(savedMuseumArtworksPage || 1);
       setRadiusKm(savedRadiusKm || 5);
+      setCustomRadius(savedCustomRadius || "");
       setCurrentMuseumId(savedMuseumId || null);
       setUserLocation(savedUserLocation || null);
       return {
         savedQuery,
         savedMode,
-        savedRadiusKm,
+        searchRadius: savedRadiusKm,
+        customRadius: savedCustomRadius,
         savedViewMode,
         savedMuseumId,
         savedOffset,
@@ -210,24 +271,6 @@ const Search = () => {
       </div>
     </div>
   );
-
-  const MapBounds = ({ userLocation, museums }) => {
-    const map = useMap();
-    useEffect(() => {
-      if (userLocation && museums.length) {
-        const bounds = L.latLngBounds([
-          [userLocation.lat, userLocation.lon],
-          ...museums
-            .filter((museum) => museum.latitude && museum.longitude)
-            .map((museum) => [museum.latitude, museum.longitude]),
-        ]);
-        map.fitBounds(bounds, { padding: [50, 50] });
-      } else if (userLocation) {
-        map.setView([userLocation.lat, userLocation.lon], 13);
-      }
-    }, [map, userLocation, museums]);
-    return null;
-  };
 
   const fetchRecommendations = async (newOffset) => {
     const token = localStorage.getItem("token");
@@ -674,6 +717,7 @@ const Search = () => {
     setViewMode("main");
     setCurrentMuseumId(null);
     setError("");
+    setCustomRadius("");
     if (mode === "museum") {
       handleMuseumSearch();
     }
@@ -681,12 +725,24 @@ const Search = () => {
 
   const handleRadiusChange = (newRadius) => {
     setRadiusKm(newRadius);
+    setCustomRadius(newRadius.toString());
     setMuseumPage(1);
     handleMuseumSearch(newRadius);
   };
 
+  const handleCustomRadiusChange = (e) => {
+    const value = e.target.value;
+    setCustomRadius(value);
+    const radius = parseFloat(value);
+    if (!isNaN(radius) && radius >= 1 && radius <= 500) {
+      setRadiusKm(radius);
+      setMuseumPage(1);
+      handleMuseumSearch(radius);
+    }
+  };
+
   useEffect(() => {
-    const savedState = loadSearchState();
+    const savedState = loadSearchResult();
     if (savedState) {
       if (
         savedState.savedViewMode === "museumArtworks" &&
@@ -736,6 +792,7 @@ const Search = () => {
         );
         setMuseumPage(savedState.savedMuseumPage || 1);
         setRadiusKm(savedState.savedRadiusKm || 5);
+        setCustomRadius(savedState.savedCustomRadius || "");
         setSearchMode("museum");
         setViewMode("main");
       }
@@ -757,6 +814,7 @@ const Search = () => {
             display: flex;
             gap: 0.5rem;
             margin: 1rem 0;
+            flex-wrap: wrap;
           }
           .radius-button {
             padding: 0.5rem 1rem;
@@ -777,6 +835,18 @@ const Search = () => {
           .radius-button:disabled {
             opacity: 0.6;
             cursor: not-allowed;
+          }
+          .custom-radius-input {
+            width: 100px;
+            padding: 0.5rem;
+            border: 1px solid #ced4da;
+            border-radius: 0.25rem;
+            margin-left: 0.5rem;
+          }
+          .custom-radius-input:focus {
+            border-color: #007bff;
+            outline: none;
+            box-shadow: 0 0 0 0.2rem rgba(0,123,255,0.25);
           }
           .map-container {
             height: 400px;
@@ -850,7 +920,7 @@ const Search = () => {
         <div className="mb-4">
           <h6>Select search radius (km):</h6>
           <div className="radius-buttons">
-            {[5, 10, 25, 50].map((radius) => (
+            {[5, 10, 25, 50, 100, 150].map((radius) => (
               <button
                 key={radius}
                 className={`radius-button ${
@@ -862,6 +932,17 @@ const Search = () => {
                 {radius}
               </button>
             ))}
+            <input
+              type="number"
+              className="custom-radius-input"
+              placeholder="Custom"
+              value={customRadius}
+              onChange={handleCustomRadiusChange}
+              min="1"
+              max="500"
+              step="1"
+              disabled={isSearchLoading}
+            />
           </div>
         </div>
       )}
@@ -878,7 +959,15 @@ const Search = () => {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             />
-            <MapBounds userLocation={userLocation} museums={allMuseumResults} />
+            <MapBounds
+              userLocation={userLocation}
+              museums={allMuseumResults}
+              radiusKm={radiusKm}
+            />
+            <SearchRadiusCircle
+              userLocation={userLocation}
+              radiusKm={radiusKm}
+            />
             <Marker
               position={[userLocation.lat, userLocation.lon]}
               icon={redIcon}
