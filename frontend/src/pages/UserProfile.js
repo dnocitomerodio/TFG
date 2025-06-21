@@ -13,6 +13,11 @@ const UserProfile = () => {
   const [success, setSuccess] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [notificationFrequency, setNotificationFrequency] = useState(1440);
+  const [notificationRadius, setNotificationRadius] = useState(100);
+  const [latitude, setLatitude] = useState("");
+  const [longitude, setLongitude] = useState("");
   const navigate = useNavigate();
 
   const getToken = () => localStorage.getItem("token");
@@ -33,6 +38,11 @@ const UserProfile = () => {
       setProfile(response.data);
       setLevel(response.data.level || "none");
       setIsAdmin(response.data.role === "admin");
+      setNotificationsEnabled(response.data.notifications_enabled ?? true);
+      setNotificationFrequency(response.data.notification_frequency ?? 1440);
+      setNotificationRadius(response.data.notification_radius ?? 100);
+      setLatitude(response.data.last_location?.lat ?? "");
+      setLongitude(response.data.last_location?.lon ?? "");
       setError("");
     } catch (err) {
       console.error("Profile fetch error:", err);
@@ -171,6 +181,86 @@ const UserProfile = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleUpdateNotificationSettings = async (e) => {
+    e.preventDefault();
+    const token = getToken();
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+
+    setError("");
+    setSuccess("");
+    if (latitude && isNaN(latitude)) {
+      setError("Latitude must be a number");
+      return;
+    }
+    if (longitude && isNaN(longitude)) {
+      setError("Longitude must be a number");
+      return;
+    }
+    if (isNaN(notificationRadius) || notificationRadius <= 0) {
+      setError("Radius must be a positive number");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const settings = {
+        notifications_enabled: notificationsEnabled,
+        notification_frequency: parseInt(notificationFrequency),
+        notification_radius: parseFloat(notificationRadius),
+      };
+      if (latitude && longitude) {
+        settings.last_location = {
+          lat: parseFloat(latitude),
+          lon: parseFloat(longitude),
+        };
+      }
+      const response = await axios.put("/api/user/settings", settings, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setSuccess(response.data.msg);
+      await fetchProfile();
+    } catch (err) {
+      console.error("Update notification settings error:", err);
+      if (err.response?.status === 401) {
+        setError("Session expired. Please log in again.");
+        localStorage.removeItem("token");
+        localStorage.removeItem("refreshToken");
+        navigate("/login");
+      } else if (err.code === "ERR_NETWORK") {
+        setError("Unable to connect to the server. Please try again.");
+      } else {
+        setError(
+          err.response?.data?.msg || "Error updating notification settings"
+        );
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGetCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setError("Geolocation is not supported by your browser");
+      return;
+    }
+    setIsLoading(true);
+    setError("");
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLatitude(position.coords.latitude.toString());
+        setLongitude(position.coords.longitude.toString());
+        setIsLoading(false);
+      },
+      (err) => {
+        setError("Unable to retrieve your location: " + err.message);
+        setIsLoading(false);
+      }
+    );
   };
 
   const handleDeleteAccount = async () => {
@@ -321,6 +411,24 @@ const UserProfile = () => {
                 <strong>Description Level:</strong> {profile.level || "None"}
               </p>
               <p>
+                <strong>Notifications Enabled:</strong>{" "}
+                {profile.notifications_enabled ? "Yes" : "No"}
+              </p>
+              <p>
+                <strong>Notification Frequency:</strong>{" "}
+                {profile.notification_frequency === 1440 ? "Daily" : "Weekly"}
+              </p>
+              <p>
+                <strong>Notification Radius:</strong>{" "}
+                {profile.notification_radius} km
+              </p>
+              <p>
+                <strong>Last Location:</strong>{" "}
+                {profile.last_location?.lat && profile.last_location?.lon
+                  ? `Lat: ${profile.last_location.lat}, Lon: ${profile.last_location.lon}`
+                  : "Not set"}
+              </p>
+              <p>
                 <strong>Saved Artpieces:</strong>
               </p>
               {profile.artpieces && profile.artpieces.length > 0 ? (
@@ -336,6 +444,98 @@ const UserProfile = () => {
               ) : (
                 <p>No artpieces saved.</p>
               )}
+            </div>
+          </div>
+
+          {/* Update Notification Settings */}
+          <div className="card mb-4">
+            <div className="card-header">
+              <h4>Notification Settings</h4>
+            </div>
+            <div className="card-body">
+              <form onSubmit={handleUpdateNotificationSettings}>
+                <div className="mb-3 form-check">
+                  <input
+                    type="checkbox"
+                    className="form-check-input"
+                    id="notificationsEnabled"
+                    checked={notificationsEnabled}
+                    onChange={(e) => setNotificationsEnabled(e.target.checked)}
+                  />
+                  <label
+                    htmlFor="notificationsEnabled"
+                    className="form-check-label"
+                  >
+                    Enable Email Notifications
+                  </label>
+                </div>
+                <div className="mb-3">
+                  <label htmlFor="notificationFrequency" className="form-label">
+                    Notification Frequency
+                  </label>
+                  <select
+                    className="form-select"
+                    id="notificationFrequency"
+                    value={notificationFrequency}
+                    onChange={(e) => setNotificationFrequency(e.target.value)}
+                  >
+                    <option value={1440}>Daily</option>
+                    <option value={10080}>Weekly</option>
+                  </select>
+                </div>
+                <div className="mb-3">
+                  <label htmlFor="notificationRadius" className="form-label">
+                    Notification Radius (km)
+                  </label>
+                  <input
+                    type="number"
+                    className="form-control"
+                    id="notificationRadius"
+                    value={notificationRadius}
+                    onChange={(e) => setNotificationRadius(e.target.value)}
+                    min="1"
+                    step="1"
+                    required
+                  />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label">Location</label>
+                  <div className="input-group">
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Latitude"
+                      value={latitude}
+                      onChange={(e) => setLatitude(e.target.value)}
+                    />
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Longitude"
+                      value={longitude}
+                      onChange={(e) => setLongitude(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary"
+                      onClick={handleGetCurrentLocation}
+                      disabled={isLoading}
+                    >
+                      Use Current Location
+                    </button>
+                  </div>
+                  <small className="form-text text-muted">
+                    Enter coordinates manually or use your current location.
+                  </small>
+                </div>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Updating..." : "Update Notification Settings"}
+                </button>
+              </form>
             </div>
           </div>
 
@@ -356,7 +556,7 @@ const UserProfile = () => {
                     id="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    required
+                    required=""
                   />
                 </div>
                 <div className="mb-3">

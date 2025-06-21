@@ -44,7 +44,7 @@ class UserSettings(Resource):
     @jwt_required()
     @api.expect(user_model)
     @api.doc(security="Bearer Auth")
-    def patch(self):
+    def put(self):
         identity = get_jwt_identity()
         user_data = mongo.db.users.find_one({"email": identity})
         if not user_data:
