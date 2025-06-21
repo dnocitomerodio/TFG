@@ -1,11 +1,16 @@
 import requests
 import os
 import math
+import logging
 from azure.ai.inference import ChatCompletionsClient
 from azure.ai.inference.models import SystemMessage, UserMessage
 from azure.core.credentials import AzureKeyCredential
 from dotenv import load_dotenv
 from urllib.parse import quote, quote_plus
+from app.services.logger_service import log_user_action
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -130,16 +135,20 @@ class ExternalAPI:
                 f"Description: {base_description}"
             )
 
-        completion = self.client.complete(
-            messages=[
+        try:
+            completion = self.client.complete(
+                messages=[
                     SystemMessage("You are an art expert who provides descriptions and explanations."),
                     UserMessage(prompt),  
-            ], model=self.ai_model,
-            temperature=1.0,
-            top_p=1.0,
-            max_tokens=1000
-        )
-        return completion.choices[0].message.content
+                ], model=self.ai_model,
+                temperature=1.0,
+                top_p=1.0,
+                max_tokens=1000
+            )
+            return completion.choices[0].message.content
+        except Exception as e:
+            logger.error("Error generating enriched description for %s by %s: %s", title, author, str(e))
+            return base_description
 
     def fetch_single_art_piece(self, external_id: str, user_level="none"):
         external_id = external_id.strip()
@@ -177,8 +186,10 @@ class ExternalAPI:
 
         try:
             response = requests.get(url, headers=self.headers)
+            logger.debug("Wikidata query for %s: %s", external_id, url)
             if response.status_code == 200:
                 results = response.json().get("results", {}).get("bindings", [])
+                logger.debug("Wikidata response for %s: %s", external_id, results)
                 if results:
                     res = parse_result_wikidata_full(results[0])
                     if not res.get("museum"):
@@ -195,12 +206,17 @@ class ExternalAPI:
                             )
                             res["description"] = enriched
                         except Exception as e:
-                            print(f"Error generating enriched description: {e}")
+                            logger.error("Error generating enriched description for %s: %s", external_id, str(e))
                     return res
+                else:
+                    logger.debug("No data found for artwork %s", external_id)
+                    return {}
+            else:
+                logger.error("Error fetching artwork %s: HTTP %d", external_id, response.status_code)
+                return {}
         except requests.RequestException as e:
-            print(f"Error querying Wikidata by ID: {e}")
-
-        return {}
+            logger.error("Error querying Wikidata for %s: %s", external_id, str(e))
+            return {}
 
     def fetch_from_wikidata(self, query, limit, offset=0):
         sparql_query = f"""
@@ -229,38 +245,58 @@ class ExternalAPI:
 
         try:
             response = requests.get(url, headers=self.headers)
+            logger.debug("Wikidata query for %s: %s", query, url)
             if response.status_code == 200:
-                return response.json().get("results", {}).get("bindings", [])
+                results = response.json().get("results", {}).get("bindings", [])
+                logger.debug("Wikidata response for %s: %s results", query, len(results))
+                return results
+            else:
+                logger.error("Error querying Wikidata for %s: HTTP %d", query, response.status_code)
+                return []
         except requests.RequestException as e:
-            print(f"Error querying Wikidata: {e}")
-        return []
+            logger.error("Error querying Wikidata for %s: %s", query, str(e))
+            return []
 
     def fetch_from_europeana(self, query, limit):
         url = f"https://api.europeana.eu/record/v2/search.json?wskey={self.europeana_api_key}&query={query}&rows={limit}"
         try:
             response = requests.get(url, headers=self.headers)
+            logger.debug("Europeana query for %s: %s", query, url)
             if response.status_code == 200:
-                return response.json().get("items", [])
+                results = response.json().get("items", [])
+                logger.debug("Europeana response for %s: %s results", query, len(results))
+                return results
+            else:
+                logger.error("Error querying Europeana for %s: HTTP %d", query, response.status_code)
+                return []
         except requests.RequestException as e:
-            print(f"Error querying Europeana: {e}")
-        return []
+            logger.error("Error querying Europeana for %s: %s", query, str(e))
+            return []
 
     def fetch_from_met(self, query, limit):
         search_url = f"https://collectionapi.metmuseum.org/public/collection/v1/search?q={query}"
         try:
             search_response = requests.get(search_url, headers=self.headers)
+            logger.debug("Met Museum search query for %s: %s", query, search_url)
             if search_response.status_code == 200:
                 object_ids = search_response.json().get("objectIDs", [])[:limit]
+                logger.debug("Met Museum search returned %s object IDs", len(object_ids))
                 results = []
                 for obj_id in object_ids:
                     obj_url = f"https://collectionapi.metmuseum.org/public/collection/v1/objects/{obj_id}"
                     obj_response = requests.get(obj_url, headers=self.headers)
                     if obj_response.status_code == 200:
                         results.append(obj_response.json())
+                    else:
+                        logger.error("Error fetching Met object %s: HTTP %d", obj_id, obj_response.status_code)
+                logger.debug("Met Museum fetched %s objects", len(results))
                 return results
+            else:
+                logger.error("Error querying Met Museum for %s: HTTP %d", query, search_response.status_code)
+                return []
         except requests.RequestException as e:
-            print(f"Error querying The Met: {e}")
-        return []
+            logger.error("Error querying Met Museum for %s: %s", query, str(e))
+            return []
 
     def fetch_artist_data(self, artist_name):
         sparql_query = f"""
@@ -288,8 +324,10 @@ class ExternalAPI:
 
         try:
             response = requests.get(url, headers=self.headers)
+            logger.debug("Wikidata artist query for %s: %s", artist_name, url)
             if response.status_code == 200:
                 results = response.json().get("results", {}).get("bindings", [])
+                logger.debug("Wikidata artist response for %s: %s results", artist_name, len(results))
                 if results:
                     r = results[0]
                     wikidata_id = r["item"]["value"].split("/")[-1]
@@ -305,10 +343,15 @@ class ExternalAPI:
                         "sitelinks": sitelinks,
                         "wikipedia_url": f"https://en.wikipedia.org/wiki/{label.replace(' ', '_')}" if label else None,
                     }
+                else:
+                    logger.debug("No artist data found for %s", artist_name)
+                    return None
+            else:
+                logger.error("Error querying artist %s: HTTP %d", artist_name, response.status_code)
+                return None
         except requests.RequestException as e:
-            print(f"Error searching artist in Wikidata: {e}")
-
-        return None
+            logger.error("Error querying artist %s: %s", artist_name, str(e))
+            return None
 
     def fetch_works_by_artist(self, artist_wikidata_id, limit=50, offset=0):
         sparql_query = f"""
@@ -331,12 +374,17 @@ class ExternalAPI:
 
         try:
             response = requests.get(url, headers=self.headers)
+            logger.debug("Wikidata works query for artist %s: %s", artist_wikidata_id, url)
             if response.status_code == 200:
                 results = response.json().get("results", {}).get("bindings", [])
+                logger.debug("Wikidata works response for artist %s: %s results", artist_wikidata_id, len(results))
                 return [parse_result_wikidata(r) for r in results if r.get("item", {}).get("value")]
+            else:
+                logger.error("Error querying works for artist %s: HTTP %d", artist_wikidata_id, response.status_code)
+                return []
         except requests.RequestException as e:
-            print(f"Error searching works by artist in Wikidata: {e}")
-        return []
+            logger.error("Error querying works for artist %s: %s", artist_wikidata_id, str(e))
+            return []
 
     def fetch_museums_nearby(self, latitude, longitude, radius_km=10):
         sparql_query = f"""
@@ -363,8 +411,10 @@ class ExternalAPI:
 
         try:
             response = requests.get(url, headers=self.headers)
+            logger.debug("Wikidata museums query for (%s, %s): %s", latitude, longitude, url)
             if response.status_code == 200:
                 results = response.json().get("results", {}).get("bindings", [])
+                logger.debug("Wikidata museums response for (%s, %s): %s results", latitude, longitude, len(results))
                 museums = []
                 for r in results:
                     item_uri = r.get("item", {}).get("value", "")
@@ -381,9 +431,12 @@ class ExternalAPI:
                         "url": f"https://www.wikidata.org/wiki/{qid}"
                     })
                 return museums
+            else:
+                logger.error("Error querying museums near (%s, %s): HTTP %d", latitude, longitude, response.status_code)
+                return []
         except requests.RequestException as e:
-            print(f"Error searching nearby museums: {e}")
-        return []
+            logger.error("Error querying museums near (%s, %s): %s", latitude, longitude, str(e))
+            return []
 
     def fetch_artworks_in_museum(self, museum_wikidata_id, limit=100):
         sparql_query = f"""
@@ -404,20 +457,25 @@ class ExternalAPI:
 
         try:
             response = requests.get(url, headers=self.headers)
+            logger.debug("Wikidata artworks query for museum %s: %s", museum_wikidata_id, url)
             if response.status_code == 200:
                 results = response.json().get("results", {}).get("bindings", [])
+                logger.debug("Wikidata artworks response for museum %s: %s results", museum_wikidata_id, len(results))
                 return results
+            else:
+                logger.error("Error querying artworks in museum %s: HTTP %d", museum_wikidata_id, response.status_code)
+                return []
         except requests.RequestException as e:
-            print(f"Error searching artworks in museum: {e}")
-        return []
+            logger.error("Error querying artworks in museum %s: %s", museum_wikidata_id, str(e))
+            return []
 
     def fetch_recommendations_from_wikidata(self, favorites, level, offset=0):
         if not favorites or offset < 0:
-            print("Returning empty list: no favorites or negative offset")
+            logger.debug("Returning empty list: no favorites or negative offset")
             return []
 
         if offset > 100:
-            print(f"Warning: Large offset ({offset}) may slow down query performance")
+            logger.warning("Large offset (%d) may slow down query performance", offset)
 
         results = []
         for favorite in favorites:
@@ -460,16 +518,17 @@ class ExternalAPI:
 
             try:
                 response = requests.get(url, headers=self.headers)
+                logger.debug("Wikidata recommendations query for favorite %s: %s", favorite, url)
                 if response.status_code == 200:
                     query_results = response.json().get("results", {}).get("bindings", [])
-                    print(f"Query for favorite {favorite} returned {len(query_results)} results")
+                    logger.debug("Query for favorite %s returned %s results", favorite, len(query_results))
                     results.extend(query_results)
                 else:
-                    print(f"Error: HTTP {response.status_code} for favorite {favorite}")
+                    logger.error("Error querying recommendations for favorite %s: HTTP %d", favorite, response.status_code)
             except requests.RequestException as e:
-                print(f"Error fetching recommendations from Wikidata for favorite {favorite}: {e}")
+                logger.error("Error fetching recommendations for favorite %s: %s", favorite, str(e))
 
-        print(f"Total raw results: {len(results)}")
+        logger.debug("Total raw results: %s", len(results))
         return results
     
     def is_artwork_nearby(self, external_id, latitude, longitude, radius_km=10):
@@ -500,45 +559,43 @@ class ExternalAPI:
 
         try:
             response = requests.get(url, headers=self.headers)
-            print(f"Wikidata query URL for {external_id}: {url}")
+            logger.debug("Wikidata query for %s: %s", external_id, url)
             if response.status_code == 200:
                 results = response.json().get("results", {}).get("bindings", [])
-                print(f"Wikidata response for {external_id}: {results}")
+                logger.debug("Wikidata response for %s: %s", external_id, results)
                 if results:
                     lat = float(results[0].get("lat", {}).get("value"))
                     lon = float(results[0].get("lon", {}).get("value"))
                     item_label = results[0].get("itemLabel", {}).get("value", "Unknown")
-                    print(f"Coordinates for {external_id} ({item_label}): lat={lat}, lon={lon}")
+                    logger.debug("Coordinates for %s (%s): lat=%s, lon=%s", external_id, item_label, lat, lon)
                     
                     distance = self.haversine_distance(latitude, longitude, lat, lon)
-                    print(f"Distance for {external_id}: {distance:.2f} km (radius: {radius_km} km)")
+                    logger.debug("Distance for %s: %.2f km (radius: %.2f km)", external_id, distance, radius_km)
                     
                     if distance <= radius_km:
-                        print(f"Artwork {external_id} is nearby at {distance:.2f} km")
+                        logger.debug("Artwork %s is nearby at %.2f km", external_id, distance)
                         return True
                     else:
-                        print(f"Artwork {external_id} is too far at {distance:.2f} km")
+                        logger.debug("Artwork %s is too far at %.2f km", external_id, distance)
                         return False
                 else:
-                    print(f"No coordinates found for artwork {external_id}")
+                    logger.debug("No coordinates found for artwork %s", external_id)
                     return False
             else:
-                print(f"Error fetching artwork {external_id}: HTTP {response.status_code}")
+                logger.error("Error fetching artwork %s: HTTP %d", external_id, response.status_code)
                 return False
         except requests.RequestException as e:
-            print(f"Error querying Wikidata for artwork {external_id}: {e}")
+            logger.error("Error querying Wikidata for artwork %s: %s", external_id, str(e))
             return False
     
-        
     def haversine_distance(self, lat1, lon1, lat2, lon2):
-            R = 6371
-            lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
-            dlat = lat2 - lat1
-            dlon = lon2 - lon1
-            a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
-            c = 2 * math.asin(math.sqrt(a))
-            return R * c
-
+        R = 6371
+        lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
+        c = 2 * math.asin(math.sqrt(a))
+        return R * c
 
 def parse_result_wikidata(item):
     title = item.get("itemLabel", {}).get("value", "")
@@ -613,14 +670,14 @@ def fetch_image_with_google_cse(image, related_image=None, title=None, artist=No
     if img.startswith("commons:"):
         img = f"https://commons.wikimedia.org/wiki/File:{img.replace('commons:', '')}"
     if img:
-        print(f"Using existing image: {img}")
+        logger.debug("Using existing image: %s", img)
         return img
 
     if title and artist:
         cse_id = os.getenv("GOOGLE_CSE_ID")
         api_key = os.getenv("GOOGLE_API_KEY")
         if not cse_id or not api_key:
-            print("Google CSE credentials missing; using placeholder.")
+            logger.debug("Google CSE credentials missing; using placeholder")
             return "https://via.placeholder.com/200x200.png?text=No+Image"
 
         query = f"{title} {artist} site:en.wikipedia.org"
@@ -631,15 +688,15 @@ def fetch_image_with_google_cse(image, related_image=None, title=None, artist=No
             response.raise_for_status()
             results = response.json().get("items", [])
             if results and "link" in results[0]:
-                print(f"Found image via Google CSE for query: {query}, link: {results[0]['link']}")
+                logger.debug("Found image via Google CSE for query: %s, link: %s", query, results[0]["link"])
                 return results[0]["link"]
-            print(f"No image found via Google CSE for query: {query}")
+            logger.debug("No image found via Google CSE for query: %s", query)
         except requests.HTTPError as e:
-            print(f"Google CSE API HTTP error: {e}, response: {e.response.text if e.response else 'No response'}")
+            logger.error("Google CSE API HTTP error for query %s: %s", query, str(e))
         except requests.RequestException as e:
-            print(f"Google CSE API request error: {e}")
+            logger.error("Google CSE API request error for query %s: %s", query, str(e))
         except ValueError as e:
-            print(f"Invalid Google CSE response: {e}")
+            logger.error("Invalid Google CSE response for query %s: %s", query, str(e))
 
-        print(f"Using placeholder for title={title}, artist={artist}")
+        logger.debug("Using placeholder for title=%s, artist=%s", title, artist)
     return "https://picsum.photos/300/200.jpg"

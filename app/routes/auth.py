@@ -1,6 +1,7 @@
 import smtplib
 import secrets
 import os
+import logging
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from flask import redirect, request, url_for
@@ -16,6 +17,10 @@ from app.services.logger_service import log_user_action
 import re
 import time
 from flask_restx import Namespace, Resource
+
+# Configure logging to INFO level to suppress DEBUG logs in production
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 api = Namespace("auth", description="Authentication related operations")
 
@@ -36,9 +41,11 @@ def send_verification_email(email, token):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(SMTP_EMAIL, SMTP_PASSWORD)
             server.send_message(msg)
-        print(f"✅ Verification email sent to {email}")
+        logger.debug("Verification email sent to %s", email)
+        log_user_action(email, "Verification email sent")
     except Exception as e:
-        print(f"❌ Error sending verification email: {e}")
+        logger.error("Error sending verification email to %s: %s", email, str(e))
+        log_user_action(email, f"Failed to send verification email: {str(e)}")
 
 def send_password_reset_email(email, token):
     msg = EmailMessage()
@@ -52,9 +59,11 @@ def send_password_reset_email(email, token):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(SMTP_EMAIL, SMTP_PASSWORD)
             server.send_message(msg)
-        print(f"✅ Password reset email sent to {email}")
+        logger.debug("Password reset email sent to %s", email)
+        log_user_action(email, "Password reset email sent")
     except Exception as e:
-        print(f"❌ Error sending password reset email: {e}")
+        logger.error("Error sending password reset email to %s: %s", email, str(e))
+        log_user_action(email, f"Failed to send password reset email: {str(e)}")
 
 @api.route("/register")
 class Register(Resource):
@@ -264,6 +273,7 @@ class GoogleCallback(Resource):
 
         resp = google.get("/oauth2/v2/userinfo")
         if not resp.ok:
+            logger.error("Error fetching Google user info: %s", resp.text)
             return {"msg": "Error fetching user info"}, 400
 
         user_info = resp.json()

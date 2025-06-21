@@ -2,11 +2,16 @@ from flask import jsonify, request
 from flask_restx import Namespace, Resource, fields
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from bson import ObjectId
+import logging
 from app.extensions import mongo
 from app.services.external_api import ExternalAPI
 from app.models import ArtPiece
 from app.services.logger_service import log_user_action
 from pymongo.errors import DuplicateKeyError
+
+# Configure logging to INFO level to suppress DEBUG logs in production
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 api = Namespace("artpiece", description="Manage art pieces including CRUD and user collection actions.")
 
@@ -59,13 +64,17 @@ class ArtPieceList(Resource):
         expand = request.args.get("expand", "false").lower() == "true"
 
         if not query:
+            logger.debug("User %s attempted search without query", identity)
             return {"msg": "Query parameter is required"}, 400
 
-        parsed_results = external_api.fetch_art_pieces(query, limit=limit, offset=offset)
-
-        log_user_action(identity, f"Searched external API for art pieces: '{query}', expand={expand}")
-
-        return parsed_results, 200
+        try:
+            parsed_results = external_api.fetch_art_pieces(query, limit=limit, offset=offset)
+            logger.debug("User %s fetched %d art pieces for query '%s' with expand=%s", identity, len(parsed_results), query, expand)
+            log_user_action(identity, f"Searched external API for art pieces: '{query}', expand={expand}")
+            return parsed_results, 200
+        except Exception as e:
+            logger.error("Error fetching art pieces for user %s, query '%s': %s", identity, query, str(e))
+            return {"msg": f"Error fetching art pieces: {str(e)}"}, 500
 
     @jwt_required()
     @api.expect(artpiece_model)
@@ -73,13 +82,22 @@ class ArtPieceList(Resource):
     def post(self):
         identity = get_jwt_identity()
         if not is_admin():
+            logger.debug("User %s attempted to add art piece without admin privileges", identity)
             return {"msg": "Unauthorized"}, 403
 
         data = request.get_json()
-        artpiece = ArtPiece(data).to_dict()
-        mongo.db.artpieces.insert_one(artpiece)
-        log_user_action(identity, "Added new art piece")
-        return {"msg": "Art piece added successfully"}, 201
+        try:
+            artpiece = ArtPiece(data).to_dict()
+            mongo.db.artpieces.insert_one(artpiece)
+            logger.debug("User %s added new art piece: %s", identity, data.get("title", "Untitled"))
+            log_user_action(identity, "Added new art piece")
+            return {"msg": "Art piece added successfully"}, 201
+        except DuplicateKeyError:
+            logger.error("Duplicate key error adding art piece for user %s: %s", identity, data.get("external_id", "Unknown"))
+            return {"msg": "Art piece already exists"}, 400
+        except Exception as e:
+            logger.error("Error adding art piece for user %s: %s", identity, str(e))
+            return {"msg": f"Error adding art piece: {str(e)}"}, 500
 
 @api.route("/external/<string:external_id>")
 class ExternalArtPieceDetail(Resource):
@@ -91,12 +109,18 @@ class ExternalArtPieceDetail(Resource):
         user = mongo.db.users.find_one({"email": identity})
         default_user_level = user.get("level", "none")
         level = request.args.get("level", data.get("level", default_user_level))
-        result = external_api.fetch_single_art_piece(external_id, level)
-        if not result:
-            return {"msg": "Art piece not found"}, 404
 
-        log_user_action(identity, f"Viewed external art piece {external_id}")
-        return result, 200
+        try:
+            result = external_api.fetch_single_art_piece(external_id, level)
+            if not result:
+                logger.debug("Art piece %s not found for user %s", external_id, identity)
+                return {"msg": "Art piece not found"}, 404
+            logger.debug("User %s fetched external art piece %s with level %s", identity, external_id, level)
+            log_user_action(identity, f"Viewed external art piece {external_id}")
+            return result, 200
+        except Exception as e:
+            logger.error("Error fetching external art piece %s for user %s: %s", external_id, identity, str(e))
+            return {"msg": f"Error fetching art piece: {str(e)}"}, 500
 
 @api.route("/<string:artpiece_id>")
 class ArtPieceById(Resource):
@@ -104,12 +128,17 @@ class ArtPieceById(Resource):
     @api.doc(security="Bearer Auth")
     def get(self, artpiece_id):
         identity = get_jwt_identity()
-        artpiece = mongo.db.artpieces.find_one({"_id": ObjectId(artpiece_id)})
-        if not artpiece:
-            return {"msg": "Art piece not found"}, 404
-
-        log_user_action(identity, f"Viewed art piece {artpiece_id}")
-        return convert_objectid_to_str(artpiece), 200
+        try:
+            artpiece = mongo.db.artpieces.find_one({"_id": ObjectId(artpiece_id)})
+            if not artpiece:
+                logger.debug("Art piece %s not found for user %s", artpiece_id, identity)
+                return {"msg": "Art piece not found"}, 404
+            logger.debug("User %s fetched art piece %s", identity, artpiece_id)
+            log_user_action(identity, f"Viewed art piece {artpiece_id}")
+            return convert_objectid_to_str(artpiece), 200
+        except Exception as e:
+            logger.error("Error fetching art piece %s for user %s: %s", artpiece_id, identity, str(e))
+            return {"msg": f"Error fetching art piece: {str(e)}"}, 500
 
     @jwt_required()
     @api.expect(artpiece_model)
@@ -117,33 +146,44 @@ class ArtPieceById(Resource):
     def put(self, artpiece_id):
         identity = get_jwt_identity()
         if not is_admin():
+            logger.debug("User %s attempted to update art piece %s without admin privileges", identity, artpiece_id)
             return {"msg": "Unauthorized"}, 403
 
         data = request.get_json()
-        result = mongo.db.artpieces.update_one(
-            {"_id": ObjectId(artpiece_id)},
-            {"$set": data}
-        )
-
-        if result.matched_count == 0:
-            return {"msg": "Art piece not found"}, 404
-
-        log_user_action(identity, f"Updated art piece {artpiece_id}")
-        return {"msg": "Art piece updated"}, 200
+        try:
+            result = mongo.db.artpieces.update_one(
+                {"_id": ObjectId(artpiece_id)},
+                {"$set": data}
+            )
+            if result.matched_count == 0:
+                logger.debug("Art piece %s not found for update by user %s", artpiece_id, identity)
+                return {"msg": "Art piece not found"}, 404
+            logger.debug("User %s updated art piece %s", identity, artpiece_id)
+            log_user_action(identity, f"Updated art piece {artpiece_id}")
+            return {"msg": "Art piece updated"}, 200
+        except Exception as e:
+            logger.error("Error updating art piece %s for user %s: %s", artpiece_id, identity, str(e))
+            return {"msg": f"Error updating art piece: {str(e)}"}, 500
 
     @jwt_required()
     @api.doc(security="Bearer Auth")
     def delete(self, artpiece_id):
         identity = get_jwt_identity()
         if not is_admin():
+            logger.debug("User %s attempted to delete art piece %s without admin privileges", identity, artpiece_id)
             return {"msg": "Unauthorized"}, 403
 
-        result = mongo.db.artpieces.delete_one({"_id": ObjectId(artpiece_id)})
-        if result.deleted_count == 0:
-            return {"msg": "Art piece not found"}, 404
-
-        log_user_action(identity, f"Deleted art piece {artpiece_id}")
-        return {"msg": "Art piece deleted"}, 200
+        try:
+            result = mongo.db.artpieces.delete_one({"_id": ObjectId(artpiece_id)})
+            if result.deleted_count == 0:
+                logger.debug("Art piece %s not found for deletion by user %s", artpiece_id, identity)
+                return {"msg": "Art piece not found"}, 404
+            logger.debug("User %s deleted art piece %s", identity, artpiece_id)
+            log_user_action(identity, f"Deleted art piece {artpiece_id}")
+            return {"msg": "Art piece deleted"}, 200
+        except Exception as e:
+            logger.error("Error deleting art piece %s for user %s: %s", artpiece_id, identity, str(e))
+            return {"msg": f"Error deleting art piece: {str(e)}"}, 500
 
 @api.route("/add_to_user")
 class AddToUserCollection(Resource):
@@ -155,24 +195,31 @@ class AddToUserCollection(Resource):
         data = request.get_json()
 
         if "external_id" not in data or not data["external_id"]:
+            logger.debug("User %s attempted to add art piece without external_id", identity)
             return {"msg": "Missing external_id"}, 400
 
-        existing = mongo.db.artpieces.find_one({"external_id": data["external_id"]})
+        try:
+            existing = mongo.db.artpieces.find_one({"external_id": data["external_id"]})
+            if existing:
+                artpiece_id = str(existing["_id"])
+            else:
+                artpiece_data = ArtPiece(data).to_dict()
+                result = mongo.db.artpieces.insert_one(artpiece_data)
+                artpiece_id = str(result.inserted_id)
 
-        if existing:
-            artpiece_id = str(existing["_id"])
-        else:
-            artpiece_data = ArtPiece(data).to_dict()
-            result = mongo.db.artpieces.insert_one(artpiece_data)
-            artpiece_id = str(result.inserted_id)
-
-        mongo.db.users.update_one(
-            {"email": identity},
-            {"$addToSet": {"artpieces": artpiece_id}}
-        )
-
-        log_user_action(identity, f"Added art piece {artpiece_id} to collection")
-        return {"msg": "Art piece added", "artpiece_id": artpiece_id}, 200
+            mongo.db.users.update_one(
+                {"email": identity},
+                {"$addToSet": {"artpieces": artpiece_id}}
+            )
+            logger.debug("User %s added art piece %s to collection", identity, artpiece_id)
+            log_user_action(identity, f"Added art piece {artpiece_id} to collection")
+            return {"msg": "Art piece added", "artpiece_id": artpiece_id}, 200
+        except DuplicateKeyError:
+            logger.error("Duplicate key error adding art piece %s for user %s", data.get("external_id", "Unknown"), identity)
+            return {"msg": "Art piece already exists"}, 400
+        except Exception as e:
+            logger.error("Error adding art piece to collection for user %s: %s", identity, str(e))
+            return {"msg": f"Error adding art piece: {str(e)}"}, 500
 
 @api.route("/remove_from_user/<string:artpiece_id>")
 class RemoveFromUserCollection(Resource):
@@ -180,21 +227,26 @@ class RemoveFromUserCollection(Resource):
     @api.doc(security="Bearer Auth")
     def delete(self, artpiece_id):
         identity = get_jwt_identity()
+        try:
+            result = mongo.db.users.update_one(
+                {"email": identity},
+                {"$pull": {"artpieces": artpiece_id}}
+            )
+            if result.modified_count == 0:
+                logger.debug("Art piece %s not in collection for user %s", artpiece_id, identity)
+                return {"msg": "Art piece not in user collection"}, 404
 
-        result = mongo.db.users.update_one(
-            {"email": identity},
-            {"$pull": {"artpieces": artpiece_id}}
-        )
+            still_used = mongo.db.users.find_one({"artpieces": artpiece_id})
+            if not still_used:
+                mongo.db.artpieces.delete_one({"_id": ObjectId(artpiece_id)})
+                logger.debug("Art piece %s deleted from database as no users reference it", artpiece_id)
 
-        if result.modified_count == 0:
-            return {"msg": "Art piece not in user collection"}, 404
-
-        still_used = mongo.db.users.find_one({"artpieces": artpiece_id})
-        if not still_used:
-            mongo.db.artpieces.delete_one({"_id": ObjectId(artpiece_id)})
-
-        log_user_action(identity, f"Removed art piece {artpiece_id} from collection")
-        return {"msg": "Art piece removed"}, 200
+            logger.debug("User %s removed art piece %s from collection", identity, artpiece_id)
+            log_user_action(identity, f"Removed art piece {artpiece_id} from collection")
+            return {"msg": "Art piece removed"}, 200
+        except Exception as e:
+            logger.error("Error removing art piece %s from collection for user %s: %s", artpiece_id, identity, str(e))
+            return {"msg": f"Error removing art piece: {str(e)}"}, 500
 
 @api.route("/artist")
 class ArtistSearch(Resource):
@@ -206,33 +258,39 @@ class ArtistSearch(Resource):
         limit = int(request.args.get("limit", 10))
         offset = int(request.args.get("offset", 0))
         if not artist_name:
+            logger.debug("User %s attempted artist search without query", identity)
             return {"msg": "Query parameter is required (artist name)"}, 400
 
-        artist_data = external_api.fetch_artist_data(artist_name)
-        if not artist_data:
-            return {"msg": f"Artist '{artist_name}' not found in Wikidata"}, 404
+        try:
+            artist_data = external_api.fetch_artist_data(artist_name)
+            if not artist_data:
+                logger.debug("Artist '%s' not found for user %s", artist_name, identity)
+                return {"msg": f"Artist '{artist_name}' not found in Wikidata"}, 404
 
-        artworks = external_api.fetch_works_by_artist(artist_data["wikidata_id"], limit=limit, offset=offset)
+            artworks = external_api.fetch_works_by_artist(artist_data["wikidata_id"], limit=limit, offset=offset)
+            logger.debug("User %s fetched %d artworks for artist '%s'", identity, len(artworks), artist_name)
 
-        formatted_artworks = []
-        for work in artworks:
-            formatted_artworks.append({
-                "external_id": work.get("external_id", ""),
-                "title": work.get("title", ""),
-                "description": work.get("description", ""),
-                "source_url": f"https://www.wikidata.org/wiki/{work.get('external_id', '')}" if work.get("external_id") else "",
-                "sitelinks": work.get("sitelinks", 0),
-                "image": work.get("image", ""),
-                "author": work.get("author", artist_data["label"]),
-                "museum": work.get("museum", "Unknown")
-            })
+            formatted_artworks = []
+            for work in artworks:
+                formatted_artworks.append({
+                    "external_id": work.get("external_id", ""),
+                    "title": work.get("title", ""),
+                    "description": work.get("description", ""),
+                    "source_url": f"https://www.wikidata.org/wiki/{work.get('external_id', '')}" if work.get("external_id") else "",
+                    "sitelinks": work.get("sitelinks", 0),
+                    "image": work.get("image", ""),
+                    "author": work.get("author", artist_data["label"]),
+                    "museum": work.get("museum", "Unknown")
+                })
 
-        log_user_action(identity, f"Searched artworks for artist query: '{artist_name}'")
-
-        return {
-            "artist": artist_data,
-            "artworks": formatted_artworks
-        }, 200
+            log_user_action(identity, f"Searched artworks for artist query: '{artist_name}'")
+            return {
+                "artist": artist_data,
+                "artworks": formatted_artworks
+            }, 200
+        except Exception as e:
+            logger.error("Error fetching artist '%s' artworks for user %s: %s", artist_name, identity, str(e))
+            return {"msg": f"Error fetching artist artworks: {str(e)}"}, 500
 
 @api.route("/nearby_museums")
 class MuseumsNearby(Resource):
@@ -249,13 +307,16 @@ class MuseumsNearby(Resource):
         radius_km = request.args.get("radius_km", "5")
 
         if not lat or not lon:
+            logger.debug("User %s attempted nearby museums search without lat/lon", identity)
             return {"msg": "Latitude and longitude are required"}, 400
 
         try:
             results = external_api.fetch_museums_nearby(float(lat), float(lon), float(radius_km))
+            logger.debug("User %s fetched %d museums near (%s, %s) within %s km", identity, len(results), lat, lon, radius_km)
             log_user_action(identity, f"Fetched museums near coordinates ({lat}, {lon}) within {radius_km} km")
             return results, 200
         except Exception as e:
+            logger.error("Error fetching museums near (%s, %s) for user %s: %s", lat, lon, identity, str(e))
             return {"msg": f"Error retrieving museums: {str(e)}"}, 500
 
 @api.route("/nearby/<string:external_id>")
@@ -273,6 +334,7 @@ class ArtworkNearby(Resource):
         radius_km = request.args.get("radius_km", "5")
 
         if not lat or not lon:
+            logger.debug("User %s attempted nearby check for %s without lat/lon", identity, external_id)
             return {"msg": "Latitude and longitude are required"}, 400
 
         try:
@@ -280,13 +342,16 @@ class ArtworkNearby(Resource):
             lon = float(lon)
             radius_km = float(radius_km)
         except ValueError:
+            logger.debug("User %s provided invalid lat/lon/radius for %s", identity, external_id)
             return {"msg": "Latitude, longitude, and radius_km must be valid numbers"}, 400
 
         try:
             is_nearby = external_api.is_artwork_nearby(external_id, lat, lon, radius_km)
+            logger.debug("User %s checked artwork %s near (%s, %s) within %s km: %s", identity, external_id, lat, lon, radius_km, is_nearby)
             log_user_action(identity, f"Checked if artwork {external_id} is near ({lat}, {lon}) within {radius_km} km")
             return {"is_nearby": is_nearby}, 200
         except Exception as e:
+            logger.error("Error checking artwork %s near (%s, %s) for user %s: %s", external_id, lat, lon, identity, str(e))
             return {"msg": f"Error checking artwork location: {str(e)}"}, 500
 
 @api.route("/nearby/batch")
@@ -304,6 +369,7 @@ class ArtworkNearbyBatch(Resource):
         radius_km = data.get("radius_km")
 
         if not external_ids or not lat or not lon or not radius_km:
+            logger.debug("User %s attempted batch nearby check without required fields", identity)
             return {"msg": "external_ids, lat, lon, and radius_km are required"}, 400
 
         try:
@@ -311,6 +377,7 @@ class ArtworkNearbyBatch(Resource):
             lon = float(lon)
             radius_km = float(radius_km)
         except ValueError:
+            logger.debug("User %s provided invalid lat/lon/radius for batch nearby check", identity)
             return {"msg": "lat, lon, and radius_km must be valid numbers"}, 400
 
         try:
@@ -318,9 +385,11 @@ class ArtworkNearbyBatch(Resource):
             for external_id in external_ids:
                 is_nearby = external_api.is_artwork_nearby(external_id, lat, lon, radius_km)
                 results[external_id] = is_nearby
+            logger.debug("User %s checked %d artworks near (%s, %s) within %s km", identity, len(external_ids), lat, lon, radius_km)
             log_user_action(identity, f"Checked batch nearby artworks at ({lat}, {lon}) within {radius_km} km")
             return {"results": results}, 200
         except Exception as e:
+            logger.error("Error checking batch artworks near (%s, %s) for user %s: %s", lat, lon, identity, str(e))
             return {"msg": f"Error checking artworks: {str(e)}"}, 500
 
 @api.route("/museum_works/<string:museum_id>")
@@ -329,7 +398,6 @@ class WorksByMuseum(Resource):
     @api.doc(security="Bearer Auth", params={"museum_id": "Wikidata ID of the museum (e.g., Q160112)"})
     def get(self, museum_id):
         identity = get_jwt_identity()
-
         try:
             results = external_api.fetch_artworks_in_museum(museum_id)
             formatted = []
@@ -345,10 +413,11 @@ class WorksByMuseum(Resource):
                     "sitelinks": int(item.get("sitelinks", {}).get("value", 0)) if "sitelinks" in item else 0,
                     "source_url": f"https://www.wikidata.org/wiki/{external_id}"
                 })
-
+            logger.debug("User %s fetched %d artworks for museum %s", identity, len(formatted), museum_id)
             log_user_action(identity, f"Fetched artworks for museum {museum_id}")
             return {"museum_id": museum_id, "artworks": formatted}, 200
         except Exception as e:
+            logger.error("Error fetching artworks for museum %s for user %s: %s", museum_id, identity, str(e))
             return {"msg": f"Error retrieving museum artworks: {str(e)}"}, 500
 
 @api.route("/recommendations")
@@ -362,24 +431,29 @@ class ArtPieceRecommendations(Resource):
         identity = get_jwt_identity()
         user = mongo.db.users.find_one({"email": identity})
         if not user:
+            logger.debug("User %s not found for recommendations", identity)
             return {"msg": "User not found"}, 404
 
         default_user_level = user.get("level", "none")
         level = request.args.get("level", default_user_level)
         if level not in ["none", "beginner", "expert"]:
+            logger.debug("User %s provided invalid level '%s' for recommendations", identity, level)
             return {"msg": "Invalid level parameter. Use 'none', 'beginner', or 'expert'"}, 400
 
         try:
             offset = int(request.args.get("offset", 0))
             if offset < 0:
+                logger.debug("User %s provided negative offset %d for recommendations", identity, offset)
                 return {"msg": "Offset must be non-negative"}, 400
         except ValueError:
+            logger.debug("User %s provided invalid offset for recommendations", identity)
             return {"msg": "Invalid offset parameter"}, 400
 
         external_ids = user.get("artpieces", [])
 
         try:
-            raw_results = external_api.fetch_recommendations_from_wikidata(external_ids, external_ids, level=10)
+            raw_results = external_api.fetch_recommendations_from_wikidata(external_ids, level=10)
+            logger.debug("User %s fetched %d raw recommendations for external_ids: %s", identity, len(raw_results), external_ids)
 
             recommendations = []
             for result in raw_results:
@@ -435,7 +509,9 @@ class ArtPieceRecommendations(Resource):
                 if rec.get("_id")
             ]
 
+            logger.debug("User %s received %d formatted recommendations with level=%s, offset=%d", identity, len(formatted), level, offset)
             log_user_action(identity, f"Fetched recommendations with level={level}, external_ids={external_ids}, offset={offset}")
             return formatted, 200
         except Exception as e:
+            logger.error("Error fetching recommendations for user %s with level=%s: %s", identity, level, str(e))
             return {"msg": f"Error retrieving recommendations: {str(e)}"}, 500

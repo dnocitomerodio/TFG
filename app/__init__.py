@@ -47,18 +47,6 @@ def create_app():
         'connect-src': ["'self'", "http://localhost:5000", "https://accounts.google.com", "http://localhost:3000"]
     }, force_https=False if os.getenv("FLASK_ENV") == "development" else True)
 
-    @app.before_request
-    def before_request():
-        if request.method == "OPTIONS":
-            response = jsonify({"status": "OK"})
-            response.headers.add("Access-Control-Allow-Origin", "http://localhost:3000")
-            response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-            response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
-            response.headers.add("Access-Control-Allow-Credentials", "true")
-            return response
-        if not request.is_secure and os.getenv("FLASK_ENV") != "development":
-            return jsonify({"msg": "HTTPS required"}), 403
-
     mongo.init_app(app)
     jwt.init_app(app)
 
@@ -95,7 +83,7 @@ def create_app():
     scheduler = BackgroundScheduler(timezone="Europe/Madrid")
     scheduler.add_job(
         check_nearby_artworks,
-        trigger=CronTrigger(minute="*/1"),
+        trigger=CronTrigger(minute="*/5"),
         id="notify_users_daily",
         replace_existing=True
     )
