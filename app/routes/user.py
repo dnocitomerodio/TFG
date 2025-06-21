@@ -2,26 +2,29 @@ from flask import request
 from flask_restx import Namespace, Resource, fields
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from bson import ObjectId
+from datetime import datetime
 from app.extensions import mongo, bcrypt
 from app.models import User
 from app.services.logger_service import log_user_action
 
 api = Namespace("user", description="User-related operations, including managing profiles, roles, and users.")
 
-
 def is_admin():
     claims = get_jwt()
     return claims.get("role") == "admin"
 
-
 user_model = api.model("User", {
     "email": fields.String(required=True, description="The user's email address."),
-    "password": fields.String(required=True, description="The user's password."),
+    "password": fields.String(required=False, description="The user's password."),
     "role": fields.String(required=False, description="The user's role."),
     "level": fields.String(required=False, description="The user's level defines the depth of the descriptions he will see."),
     "artpieces": fields.List(fields.String, required=False, description="The user's list of saved artworks."),
+    "notifications_enabled": fields.Boolean(required=False, description="Enable/disable notifications."),
+    "notification_frequency": fields.Integer(required=False, description="Frequency of notification checks in minutes."),
+    "notification_radius": fields.Float(required=False, description="Radius for nearby artwork checks in kilometers."),
+    "last_location": fields.Raw(required=False, description="Last known location {lat: float, lon: float, timestamp: str}."),
+    "last_notified_artworks": fields.List(fields.Raw, required=False, description="List of notified artworks [{external_id: str, timestamp: str}].")
 })
-
 
 @api.route("/profile")
 class UserProfile(Resource):
@@ -36,6 +39,44 @@ class UserProfile(Resource):
         log_user_action(identity, "Viewed their profile")
         return user.to_dict(), 200
 
+@api.route("/settings")
+class UserSettings(Resource):
+    @jwt_required()
+    @api.expect(user_model)
+    @api.doc(security="Bearer Auth")
+    def patch(self):
+        identity = get_jwt_identity()
+        user_data = mongo.db.users.find_one({"email": identity})
+        if not user_data:
+            return {"msg": "User not found"}, 404
+
+        data = request.get_json()
+        update_data = {}
+
+        if "notifications_enabled" in data:
+            update_data["notifications_enabled"] = data["notifications_enabled"]
+        if "notification_frequency" in data:
+            if data["notification_frequency"] < 10:
+                return {"msg": "Notification frequency must be at least 10 minutes"}, 400
+            update_data["notification_frequency"] = data["notification_frequency"]
+        if "notification_radius" in data:
+            if data["notification_radius"] <= 0:
+                return {"msg": "Notification radius must be positive"}, 400
+            update_data["notification_radius"] = data["notification_radius"]
+
+        if "last_location" in data and "lat" in data["last_location"] and "lon" in data["last_location"]:
+            update_data["last_location"] = {
+                "lat": float(data["last_location"]["lat"]),
+                "lon": float(data["last_location"]["lon"]),
+                "timestamp": data["last_location"].get("timestamp", datetime.utcnow().isoformat())
+            }
+
+        if not update_data:
+            return {"msg": "No data to update"}, 400
+
+        mongo.db.users.update_one({"email": identity}, {"$set": update_data})
+        log_user_action(identity, "Updated notification settings")
+        return {"msg": "Settings updated successfully"}, 200
 
 @api.route("/update")
 class UpdateProfile(Resource):
@@ -64,7 +105,6 @@ class UpdateProfile(Resource):
 
         return {"msg": "No data to update"}, 400
 
-
 @api.route("/delete")
 class DeleteUser(Resource):
     @jwt_required()
@@ -78,7 +118,6 @@ class DeleteUser(Resource):
 
         log_user_action(identity, "Deleted their account")
         return {"msg": "User deleted successfully"}, 200
-
 
 @api.route('/remove/<string:external_id>')
 class RemoveArtPiece(Resource):
@@ -96,7 +135,6 @@ class RemoveArtPiece(Resource):
         )
         return {"msg": "Art piece removed successfully"}, 200
 
-
 @api.route("/users")
 class AllUsers(Resource):
     @jwt_required()
@@ -108,7 +146,6 @@ class AllUsers(Resource):
         users = list(mongo.db.users.find({}, {"password": 0}))
         log_user_action(get_jwt_identity(), "Viewed all users")
         return users, 200
-
 
 @api.route("/update_role/<string:user_id>")
 class UpdateUserRole(Resource):

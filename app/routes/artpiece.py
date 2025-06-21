@@ -40,6 +40,13 @@ artpiece_model = api.model("ArtPiece", {
     "source_url": fields.String(description="Source URL if fetched externally")
 })
 
+batch_nearby_model = api.model("BatchNearbyRequest", {
+    "external_ids": fields.List(fields.String, required=True, description="List of artwork external IDs"),
+    "lat": fields.Float(required=True, description="Latitude"),
+    "lon": fields.Float(required=True, description="Longitude"),
+    "radius_km": fields.Float(required=True, description="Search radius in kilometers")
+})
+
 @api.route("/")
 class ArtPieceList(Resource):
     @jwt_required()
@@ -54,7 +61,7 @@ class ArtPieceList(Resource):
         if not query:
             return {"msg": "Query parameter is required"}, 400
 
-        parsed_results = external_api.fetch_art_pieces(query, limit=limit, offset=offset, expand=expand)
+        parsed_results = external_api.fetch_art_pieces(query, limit=limit, offset=offset)
 
         log_user_action(identity, f"Searched external API for art pieces: '{query}', expand={expand}")
 
@@ -245,7 +252,7 @@ class MuseumsNearby(Resource):
             return {"msg": "Latitude and longitude are required"}, 400
 
         try:
-            results = external_api.fetch_museums_nearby(lat, lon, radius_km)
+            results = external_api.fetch_museums_nearby(float(lat), float(lon), float(radius_km))
             log_user_action(identity, f"Fetched museums near coordinates ({lat}, {lon}) within {radius_km} km")
             return results, 200
         except Exception as e:
@@ -281,6 +288,40 @@ class ArtworkNearby(Resource):
             return {"is_nearby": is_nearby}, 200
         except Exception as e:
             return {"msg": f"Error checking artwork location: {str(e)}"}, 500
+
+@api.route("/nearby/batch")
+class ArtworkNearbyBatch(Resource):
+    @jwt_required()
+    @api.expect(batch_nearby_model)
+    @api.doc(security="Bearer Auth")
+    def post(self):
+        identity = get_jwt_identity()
+        data = request.get_json()
+        
+        external_ids = data.get("external_ids", [])
+        lat = data.get("lat")
+        lon = data.get("lon")
+        radius_km = data.get("radius_km")
+
+        if not external_ids or not lat or not lon or not radius_km:
+            return {"msg": "external_ids, lat, lon, and radius_km are required"}, 400
+
+        try:
+            lat = float(lat)
+            lon = float(lon)
+            radius_km = float(radius_km)
+        except ValueError:
+            return {"msg": "lat, lon, and radius_km must be valid numbers"}, 400
+
+        try:
+            results = {}
+            for external_id in external_ids:
+                is_nearby = external_api.is_artwork_nearby(external_id, lat, lon, radius_km)
+                results[external_id] = is_nearby
+            log_user_action(identity, f"Checked batch nearby artworks at ({lat}, {lon}) within {radius_km} km")
+            return {"results": results}, 200
+        except Exception as e:
+            return {"msg": f"Error checking artworks: {str(e)}"}, 500
 
 @api.route("/museum_works/<string:museum_id>")
 class WorksByMuseum(Resource):
@@ -338,7 +379,7 @@ class ArtPieceRecommendations(Resource):
         external_ids = user.get("artpieces", [])
 
         try:
-            raw_results = external_api.fetch_recommendations_from_wikidata(external_ids, level, offset)
+            raw_results = external_api.fetch_recommendations_from_wikidata(external_ids, external_ids, level=10)
 
             recommendations = []
             for result in raw_results:
@@ -348,8 +389,8 @@ class ArtPieceRecommendations(Resource):
                     title = f"Untitled ({external_id})"
                 image = result.get("image", {}).get("value", "") or result.get("relatedImage", {}).get("value", "") or ""
                 if image.startswith("commons:"):
-                    image = f"http://commons.wikimedia.org/wiki/File:{image.replace('commons:', '')}"
-                if image and not image.startswith(("http://commons.wikimedia.org/", "https://commons.wikimedia.org/")):
+                    image = f"https://commons.wikimedia.org/wiki/File:{image.replace('commons:', '')}"
+                if image and not image.startswith(("http://commons.wikimedia.org", "https://commons.wikimedia.org")):
                     image = ""
                 recommendations.append({
                     "_id": external_id,

@@ -5,6 +5,9 @@ from flask_restx import Api
 from flask_cors import CORS
 from flask_talisman import Talisman
 from app.extensions import mongo, jwt
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+from app.tasks.notify_users import check_nearby_artworks
 import os
 
 load_dotenv()
@@ -46,7 +49,6 @@ def create_app():
 
     @app.before_request
     def before_request():
-        # Handle OPTIONS requests explicitly
         if request.method == "OPTIONS":
             response = jsonify({"status": "OK"})
             response.headers.add("Access-Control-Allow-Origin", "http://localhost:3000")
@@ -89,5 +91,18 @@ def create_app():
     api.add_namespace(user_ns, path="/api/user")
     api.add_namespace(artpiece_ns, path="/api/artpiece")
     api.add_namespace(auth_ns, path="/api/auth")
+
+    scheduler = BackgroundScheduler(timezone="Europe/Madrid")
+    scheduler.add_job(
+        check_nearby_artworks,
+        trigger=CronTrigger(hour=8, minute=0),
+        id="notify_users_daily",
+        replace_existing=True
+    )
+    scheduler.start()
+    print("✅ APScheduler started for daily notifications")
+
+    import atexit
+    atexit.register(lambda: scheduler.shutdown())
 
     return app

@@ -77,9 +77,15 @@ class Register(Resource):
             "email": email,
             "password": hashed_password,
             "role": "user",
-            "level":"none",
+            "level": "none",
             "verified": False,
-            "verification_token": verification_token
+            "verification_token": verification_token,
+            "artpieces": [],
+            "notifications_enabled": True,
+            "notification_frequency": 60,
+            "notification_radius": 100.0,
+            "last_location": {},
+            "last_notified_artworks": []
         })
 
         log_user_action(email, "registered")
@@ -270,7 +276,12 @@ class GoogleCallback(Resource):
                 "role": "user",
                 "verified": True,
                 "artpieces": [],
-                "refresh_tokens": []
+                "refresh_tokens": [],
+                "notifications_enabled": True,
+                "notification_frequency": 60,
+                "notification_radius": 100.0,
+                "last_location": {},
+                "last_notified_artworks": []
             }
             mongo.db.users.insert_one(user)
             log_user_action(email, "user created successfully with google")

@@ -1,4 +1,5 @@
 from flask_pymongo import ObjectId
+from datetime import datetime
 
 class ArtPiece:
     def __init__(self, data):
@@ -42,7 +43,12 @@ class User:
         self.level = data.get("level")
         self.password = data.get("password")
         self.role = data.get("role", "user")
-        self.artpieces = data.get("artpieces", []) 
+        self.artpieces = data.get("artpieces", [])
+        self.notifications_enabled = data.get("notifications_enabled", True)
+        self.notification_frequency = data.get("notification_frequency", 60) 
+        self.notification_radius = data.get("notification_radius", 100.0)
+        self.last_location = data.get("last_location", {}) 
+        self.last_notified_artworks = data.get("last_notified_artworks", [])
 
     def to_dict(self):
         return {
@@ -51,4 +57,9 @@ class User:
             "level": self.level,
             "role": self.role,
             "artpieces": self.artpieces,
+            "notifications_enabled": self.notifications_enabled,
+            "notification_frequency": self.notification_frequency,
+            "notification_radius": self.notification_radius,
+            "last_location": self.last_location,
+            "last_notified_artworks": self.last_notified_artworks
         }
