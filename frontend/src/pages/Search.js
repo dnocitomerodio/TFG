@@ -1,8 +1,9 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable no-unused-vars */
-import React, { useState, useEffect } from "react";
+/* eslint-disable react-hooks/exhaustive-deps */
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import axios from "../utils/api";
+import Axios from "axios";
 import {
   MapContainer,
   TileLayer,
@@ -112,6 +113,8 @@ const Search = () => {
   const [currentMuseumId, setCurrentMuseumId] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
   const pageSize = 10;
+  const hasFetchedRecommendations = useRef(false);
+  const recommendationsAbortController = useRef(null);
 
   const getImageUrl = (image) => {
     if (image && image.includes("commons.wikimedia.org")) {
@@ -200,13 +203,14 @@ const Search = () => {
       return {
         savedQuery,
         savedMode,
-        searchRadius: savedRadiusKm,
-        customRadius: savedCustomRadius,
         savedViewMode,
         savedMuseumId,
         savedOffset,
         savedMuseumPage,
         savedMuseumArtworksPage,
+        savedResults,
+        savedArtistResults,
+        savedAllMuseumResults: allMuseumResults,
       };
     }
     return null;
@@ -214,6 +218,20 @@ const Search = () => {
 
   const clearSearchState = () => {
     localStorage.removeItem("searchState");
+    setResults([]);
+    setArtistResults([]);
+    setArtistInfo(null);
+    setAllMuseumResults([]);
+    setMuseumResults([]);
+    setAllMuseumArtworks([]);
+    setMuseumArtworks([]);
+    setSearchOffset(0);
+    setSearchPage(1);
+    setMuseumPage(1);
+    setMuseumArtworksPage(1);
+    setViewMode("main");
+    setCurrentMuseumId(null);
+    setError("");
   };
 
   const renderCard = (item, index, type) => (
@@ -275,12 +293,14 @@ const Search = () => {
   );
 
   const fetchRecommendations = async (newOffset) => {
+    if (isRecommendationsLoading) return;
     const token = localStorage.getItem("token");
     if (!token) {
       navigate("/login");
       return;
     }
 
+    recommendationsAbortController.current = new AbortController();
     setIsRecommendationsLoading(true);
     try {
       const response = await axios.get("/api/artpiece/recommendations", {
@@ -292,6 +312,7 @@ const Search = () => {
         headers: {
           Authorization: `Bearer ${token}`,
         },
+        signal: recommendationsAbortController.current.signal,
         cache: "no-store",
       });
       console.log(
@@ -304,7 +325,12 @@ const Search = () => {
       );
       setRecommendations(validRecommendations);
       setError("");
+      hasFetchedRecommendations.current = true;
     } catch (err) {
+      if (Axios.isCancel(err)) {
+        console.log("Recommendations request canceled:", err.message);
+        return;
+      }
       console.error("Recommendations fetch error:", {
         message: err.message,
         response: err.response
@@ -325,6 +351,7 @@ const Search = () => {
       }
     } finally {
       setIsRecommendationsLoading(false);
+      recommendationsAbortController.current = null;
     }
   };
 
@@ -333,6 +360,10 @@ const Search = () => {
     const searchQuery = overrideQuery !== null ? overrideQuery : query;
     if (!searchQuery?.trim()) {
       setError("Please enter a search term.");
+      setResults([]);
+      setArtistResults([]);
+      setArtistInfo(null);
+      saveSearchState();
       return;
     }
 
@@ -376,6 +407,9 @@ const Search = () => {
         navigate("/login");
       } else {
         setError(err.response?.data?.msg || "Error searching artworks");
+        setResults([]);
+        setArtistResults([]);
+        setArtistInfo(null);
       }
     } finally {
       setIsSearchLoading(false);
@@ -387,6 +421,10 @@ const Search = () => {
     const searchQuery = overrideQuery !== null ? overrideQuery : query;
     if (!searchQuery?.trim()) {
       setError("Please enter an artist name.");
+      setResults([]);
+      setArtistResults([]);
+      setArtistInfo(null);
+      saveSearchState();
       return;
     }
 
@@ -436,8 +474,14 @@ const Search = () => {
         navigate("/login");
       } else if (err.response?.status === 404) {
         setError(`Artist '${searchQuery}' not found.`);
+        setArtistResults([]);
+        setArtistInfo(null);
+        setResults([]);
       } else {
         setError(err.response?.data?.msg || "Error searching artist artworks");
+        setArtistResults([]);
+        setArtistInfo(null);
+        setResults([]);
       }
     } finally {
       setIsSearchLoading(false);
@@ -513,9 +557,7 @@ const Search = () => {
           } else if (err.response?.status === 400) {
             setError("Invalid location parameters.");
           } else {
-            setError(
-              err.response?.data?.msg || "Error searching nearby museums"
-            );
+            setError(err.response?.data?.msg || "Error searching museums");
           }
         } finally {
           setIsSearchLoading(false);
@@ -533,8 +575,7 @@ const Search = () => {
               "Location access denied. Please enable location services.";
             break;
           case err.POSITION_UNAVAILABLE:
-            errorMessage =
-              "Unable to retrieve location. The geolocation service may be temporarily unavailable.";
+            errorMessage = "Unable to retrieve location. An error occurred.";
             break;
           case err.TIMEOUT:
             errorMessage = "Location request timed out. Please try again.";
@@ -641,6 +682,10 @@ const Search = () => {
 
   const handleSearch = (e) => {
     e.preventDefault();
+    if (recommendationsAbortController.current) {
+      recommendationsAbortController.current.abort();
+      console.log("Canceled ongoing recommendations request due to search");
+    }
     clearSearchState();
     setSearchOffset(0);
     setSearchPage(1);
@@ -649,6 +694,8 @@ const Search = () => {
     setMuseumArtworksPage(1);
     setCurrentMuseumId(null);
     setViewMode("main");
+    setRecommendations([]);
+    hasFetchedRecommendations.current = false;
     if (searchMode === "artist") {
       handleArtistSearch(null, 0, query);
     } else {
@@ -699,20 +746,21 @@ const Search = () => {
       direction === "next" ? offset + pageSize : Math.max(offset - pageSize, 0);
     console.log("Recommendations pagination:", { direction, newOffset });
     setOffset(newOffset);
+    hasFetchedRecommendations.current = false;
     fetchRecommendations(newOffset);
   };
 
   const handleSearchMode = (mode) => {
+    if (recommendationsAbortController.current) {
+      recommendationsAbortController.current.abort();
+      console.log(
+        "Canceled ongoing recommendations request due to mode switch"
+      );
+    }
     clearSearchState();
     setSearchMode(mode);
     setQuery("");
-    setResults([]);
-    setArtistResults([]);
-    setArtistInfo(null);
-    setAllMuseumResults([]);
-    setMuseumResults([]);
-    setAllMuseumArtworks([]);
-    setMuseumArtworks([]);
+    setRecommendations([]);
     setSearchOffset(0);
     setSearchPage(1);
     setMuseumPage(1);
@@ -721,8 +769,11 @@ const Search = () => {
     setCurrentMuseumId(null);
     setError("");
     setCustomRadius("");
+    hasFetchedRecommendations.current = false;
     if (mode === "museum") {
       handleMuseumSearch();
+    } else if (!hasFetchedRecommendations.current) {
+      fetchRecommendations(0);
     }
   };
 
@@ -753,81 +804,84 @@ const Search = () => {
     if (urlQuery?.trim()) {
       setQuery(urlQuery);
       setSearchMode(validMode);
-      // Only perform search if no results or query/mode has changed
-      const hasResults =
-        (validMode === "title" && results.length > 0) ||
-        (validMode === "artist" && artistResults.length > 0);
-      const queryOrModeChanged =
-        !savedState ||
-        savedState.savedQuery !== urlQuery ||
-        savedState.savedMode !== validMode;
-      if (!hasResults || queryOrModeChanged) {
-        clearSearchState();
-        if (validMode === "artist") {
-          handleArtistSearch(null, 0, urlQuery);
-        } else {
-          handleTitleSearch(null, 0, urlQuery);
-        }
+      hasFetchedRecommendations.current = false;
+      if (validMode === "artist") {
+        handleArtistSearch(null, 0, urlQuery);
+      } else {
+        handleTitleSearch(null, 0, urlQuery);
       }
-    } else if (savedState) {
-      if (
-        savedState.savedViewMode === "museumArtworks" &&
-        savedState.savedMuseumId
-      ) {
-        setAllMuseumArtworks(
-          Array.isArray(savedState.savedAllMuseumArtworks)
-            ? savedState.savedAllMuseumArtworks
-            : []
-        );
-        setMuseumArtworks(
-          Array.isArray(savedState.savedAllMuseumArtworks)
-            ? savedState.savedAllMuseumArtworks.slice(
-                (savedState.savedMuseumArtworksPage - 1) * pageSize,
-                savedState.savedMuseumArtworksPage * pageSize
-              )
-            : []
-        );
-        setCurrentMuseumId(savedState.savedMuseumId);
-        setMuseumArtworksPage(savedState.savedMuseumArtworksPage || 1);
-        setViewMode("museumArtworks");
-      } else if (savedState.savedQuery?.trim()) {
-        if (savedState.savedMode === "artist") {
-          handleArtistSearch(
-            null,
-            savedState.savedOffset,
-            savedState.savedQuery
-          );
-        } else if (savedState.savedMode === "title") {
-          handleTitleSearch(
-            null,
-            savedState.savedOffset,
-            savedState.savedQuery
-          );
-        }
-      } else if (savedState.savedMode === "museum") {
-        setAllMuseumResults(
-          Array.isArray(savedState.allMuseumResults)
-            ? savedState.allMuseumResults
-            : []
-        );
-        setMuseumResults(
-          Array.isArray(savedState.allMuseumResults)
-            ? savedState.allMuseumResults.slice(
-                (savedState.savedMuseumPage - 1) * pageSize,
-                savedState.savedMuseumPage * pageSize
-              )
-            : []
-        );
-        setMuseumPage(savedState.savedMuseumPage || 1);
-        setRadiusKm(savedState.savedRadiusKm || 5);
-        setCustomRadius(savedState.savedCustomRadius || "");
-        setSearchMode("museum");
-        setViewMode("main");
+    } else if (
+      savedState &&
+      savedState.savedViewMode === "museumArtworks" &&
+      savedState.savedMuseumId
+    ) {
+      setAllMuseumArtworks(
+        Array.isArray(savedState.savedAllMuseumArtworks)
+          ? savedState.savedAllMuseumArtworks
+          : []
+      );
+      setMuseumArtworks(
+        Array.isArray(savedState.savedAllMuseumArtworks)
+          ? savedState.savedAllMuseumArtworks.slice(
+              (savedState.savedMuseumArtworksPage - 1) * pageSize,
+              savedState.savedMuseumArtworksPage * pageSize
+            )
+          : []
+      );
+      setCurrentMuseumId(savedState.savedMuseumId);
+      setMuseumArtworksPage(savedState.savedMuseumArtworksPage || 1);
+      setViewMode("museumArtworks");
+    } else if (
+      savedState &&
+      savedState.savedMode === "museum" &&
+      savedState.savedAllMuseumResults?.length
+    ) {
+      setAllMuseumResults(
+        Array.isArray(savedState.savedAllMuseumResults)
+          ? savedState.savedAllMuseumResults
+          : []
+      );
+      setMuseumResults(
+        Array.isArray(savedState.savedAllMuseumResults)
+          ? savedState.savedAllMuseumResults.slice(
+              (savedState.savedMuseumPage - 1) * pageSize,
+              savedState.savedMuseumPage * pageSize
+            )
+          : []
+      );
+      setMuseumPage(savedState.savedMuseumPage || 1);
+      setRadiusKm(savedState.savedRadiusKm || 5);
+      setCustomRadius(savedState.savedCustomRadius || "");
+      setSearchMode("museum");
+      setViewMode("main");
+    } else if (
+      savedState &&
+      savedState.savedQuery?.trim() &&
+      (savedState.savedResults?.length || savedState.savedArtistResults?.length)
+    ) {
+      setQuery(savedState.savedQuery);
+      setSearchMode(savedState.savedMode || "title");
+      if (savedState.savedMode === "artist") {
+        setArtistResults(savedState.savedArtistResults || []);
+        setArtistInfo(savedState.artistInfo || null);
+        setResults([]);
+      } else {
+        setResults(savedState.savedResults || []);
+        setArtistResults([]);
+        setArtistInfo(null);
       }
+      setSearchOffset(savedState.savedOffset || 0);
+      setSearchPage(savedState.savedPage || 1);
+      setViewMode("main");
     } else {
-      fetchRecommendations(offset);
+      clearSearchState();
+      setQuery("");
+      setSearchMode("title");
+      if (!hasFetchedRecommendations.current) {
+        fetchRecommendations(0);
+      }
     }
-  }, [navigate, searchParams]);
+  }, [searchParams, navigate]);
 
   return (
     <div className="container mt-5">
