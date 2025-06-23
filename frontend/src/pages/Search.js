@@ -1,5 +1,7 @@
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable no-unused-vars */
 import React, { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import axios from "../utils/api";
 import {
   MapContainer,
@@ -33,7 +35,6 @@ const redIcon = new L.Icon({
 });
 
 const SearchRadiusCircle = ({ userLocation, radiusKm }) => {
-  // eslint-disable-next-line no-unused-vars
   const map = useMap();
   if (!userLocation) return null;
   return (
@@ -84,6 +85,8 @@ const MapBounds = ({ userLocation, museums, radiusKm }) => {
 };
 
 const Search = () => {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [artistResults, setArtistResults] = useState([]);
@@ -109,7 +112,6 @@ const Search = () => {
   const [currentMuseumId, setCurrentMuseumId] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
   const pageSize = 10;
-  const navigate = useNavigate();
 
   const getImageUrl = (image) => {
     if (image && image.includes("commons.wikimedia.org")) {
@@ -638,6 +640,7 @@ const Search = () => {
   };
 
   const handleSearch = (e) => {
+    e.preventDefault();
     clearSearchState();
     setSearchOffset(0);
     setSearchPage(1);
@@ -647,9 +650,9 @@ const Search = () => {
     setCurrentMuseumId(null);
     setViewMode("main");
     if (searchMode === "artist") {
-      handleArtistSearch(e);
+      handleArtistSearch(null, 0, query);
     } else {
-      handleTitleSearch(e);
+      handleTitleSearch(null, 0, query);
     }
   };
 
@@ -742,8 +745,31 @@ const Search = () => {
   };
 
   useEffect(() => {
+    const urlQuery = searchParams.get("q");
+    const urlMode = searchParams.get("mode") || "title";
+    const validMode = ["title", "artist"].includes(urlMode) ? urlMode : "title";
     const savedState = loadSearchResult();
-    if (savedState) {
+
+    if (urlQuery?.trim()) {
+      setQuery(urlQuery);
+      setSearchMode(validMode);
+      // Only perform search if no results or query/mode has changed
+      const hasResults =
+        (validMode === "title" && results.length > 0) ||
+        (validMode === "artist" && artistResults.length > 0);
+      const queryOrModeChanged =
+        !savedState ||
+        savedState.savedQuery !== urlQuery ||
+        savedState.savedMode !== validMode;
+      if (!hasResults || queryOrModeChanged) {
+        clearSearchState();
+        if (validMode === "artist") {
+          handleArtistSearch(null, 0, urlQuery);
+        } else {
+          handleTitleSearch(null, 0, urlQuery);
+        }
+      }
+    } else if (savedState) {
       if (
         savedState.savedViewMode === "museumArtworks" &&
         savedState.savedMuseumId
@@ -780,11 +806,13 @@ const Search = () => {
         }
       } else if (savedState.savedMode === "museum") {
         setAllMuseumResults(
-          Array.isArray(allMuseumResults) ? allMuseumResults : []
+          Array.isArray(savedState.allMuseumResults)
+            ? savedState.allMuseumResults
+            : []
         );
         setMuseumResults(
-          Array.isArray(allMuseumResults)
-            ? allMuseumResults.slice(
+          Array.isArray(savedState.allMuseumResults)
+            ? savedState.allMuseumResults.slice(
                 (savedState.savedMuseumPage - 1) * pageSize,
                 savedState.savedMuseumPage * pageSize
               )
@@ -796,12 +824,10 @@ const Search = () => {
         setSearchMode("museum");
         setViewMode("main");
       }
-    }
-    if (!museumArtworks.length) {
+    } else {
       fetchRecommendations(offset);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigate]);
+  }, [navigate, searchParams]);
 
   return (
     <div className="container mt-5">

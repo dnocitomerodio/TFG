@@ -209,6 +209,17 @@ https://templatemo.com/tm-559-zay-shop
           method="get"
           class="modal-content modal-body border-0 p-0"
         >
+          <div class="mb-2">
+            <label for="searchMode" class="me-2">Search by:</label>
+            <select
+              id="searchMode"
+              name="mode"
+              class="form-select w-auto d-inline-block"
+            >
+              <option value="title" selected>Title</option>
+              <option value="artist">Artist</option>
+            </select>
+          </div>
           <div class="input-group mb-2">
             <input
               type="text"
@@ -273,37 +284,51 @@ https://templatemo.com/tm-559-zay-shop
             </h2>
             <ul class="list-unstyled text-light footer-link-list">
               <li>
-                <a class="text-decoration-none" href="/search?q=Rembrandt"
+                <a
+                  class="text-decoration-none"
+                  href="/search?q=Rembrandt&mode=artist"
                   >Rembrandt</a
                 >
               </li>
               <li>
-                <a class="text-decoration-none" href="/search?q=Goya">Goya</a>
+                <a
+                  class="text-decoration-none"
+                  href="/search?q=Goya&mode=artist"
+                  >Goya</a
+                >
               </li>
               <li>
-                <a class="text-decoration-none" href="/search?q=Picasso"
+                <a
+                  class="text-decoration-none"
+                  href="/search?q=Picasso&mode=artist"
                   >Picasso</a
                 >
               </li>
               <li>
-                <a class="text-decoration-none" href="/search?q=Kandinsky"
+                <a
+                  class="text-decoration-none"
+                  href="/search?q=Kandinsky&mode=artist"
                   >Kandinsky</a
                 >
               </li>
               <li>
-                <a class="text-decoration-none" href="/search?q=Manet"
+                <a
+                  class="text-decoration-none"
+                  href="/search?q=Manet&mode=artist"
                   >Édouard Manet</a
                 >
               </li>
               <li>
                 <a
                   class="text-decoration-none"
-                  href="/search?q=Vincent+van+Gogh"
+                  href="/search?q=Vincent+van+Gogh&mode=artist"
                   >Vincent van Gogh</a
                 >
               </li>
               <li>
-                <a class="text-decoration-none" href="/search?q=Velazquez"
+                <a
+                  class="text-decoration-none"
+                  href="/search?q=Diego+Velazquez&mode=artist"
                   >Diego Velázquez</a
                 >
               </li>
