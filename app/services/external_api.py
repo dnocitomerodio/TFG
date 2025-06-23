@@ -572,21 +572,22 @@ class ExternalAPI:
                     distance = self.haversine_distance(latitude, longitude, lat, lon)
                     logger.debug("Distance for %s: %.2f km (radius: %.2f km)", external_id, distance, radius_km)
                     
-                    if distance <= radius_km:
-                        logger.debug("Artwork %s is nearby at %.2f km", external_id, distance)
-                        return True
-                    else:
-                        logger.debug("Artwork %s is too far at %.2f km", external_id, distance)
-                        return False
+                    is_nearby = distance <= radius_km
+                    logger.debug("Artwork %s is %s at %.2f km", external_id, "nearby" if is_nearby else "too far", distance)
+                    return {
+                        "is_nearby": is_nearby,
+                        "latitude": lat if is_nearby else None,
+                        "longitude": lon if is_nearby else None
+                    }
                 else:
                     logger.debug("No coordinates found for artwork %s", external_id)
-                    return False
+                    return {"is_nearby": False, "latitude": None, "longitude": None}
             else:
                 logger.error("Error fetching artwork %s: HTTP %d", external_id, response.status_code)
-                return False
+                return {"is_nearby": False, "latitude": None, "longitude": None}
         except requests.RequestException as e:
             logger.error("Error querying Wikidata for artwork %s: %s", external_id, str(e))
-            return False
+            return {"is_nearby": False, "latitude": None, "longitude": None}
     
     def haversine_distance(self, lat1, lon1, lat2, lon2):
         R = 6371

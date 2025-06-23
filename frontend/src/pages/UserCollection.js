@@ -2,6 +2,87 @@ import React, { useState, useEffect } from "react";
 import axios from "../utils/api";
 import { useNavigate } from "react-router-dom";
 import ArtPieceCard from "./ArtPieceCard";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Popup,
+  useMap,
+  Circle,
+} from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl:
+    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
+
+const redIcon = new L.Icon({
+  iconUrl:
+    "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
+  iconRetinaUrl:
+    "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+});
+
+const SearchRadiusCircle = ({ userLocation, radiusKm }) => {
+  // eslint-disable-next-line no-unused-vars
+  const map = useMap();
+  if (!userLocation) return null;
+  return (
+    <Circle
+      center={[userLocation.lat, userLocation.lon]}
+      radius={radiusKm * 1000}
+      pathOptions={{
+        color: "#007bff",
+        fillColor: "#007bff",
+        fillOpacity: 0.2,
+        weight: 2,
+      }}
+    >
+      <Popup>Search radius: {radiusKm} km</Popup>
+    </Circle>
+  );
+};
+
+const MapBounds = ({ userLocation, artworks, radiusKm }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (userLocation && artworks.length) {
+      const artworkBounds = L.latLngBounds(
+        artworks
+          .filter((art) => art.latitude && art.longitude)
+          .map((art) => [art.latitude, art.longitude])
+      );
+      const radiusInDegrees = radiusKm / 111;
+      const radiusBounds = L.latLngBounds([
+        [
+          userLocation.lat - radiusInDegrees,
+          userLocation.lon - radiusInDegrees,
+        ],
+        [
+          userLocation.lat + radiusInDegrees,
+          userLocation.lon + radiusInDegrees,
+        ],
+      ]);
+      const combinedBounds = artworkBounds
+        .extend([userLocation.lat, userLocation.lon])
+        .extend(radiusBounds);
+      map.fitBounds(combinedBounds, { padding: [50, 50] });
+    } else if (userLocation) {
+      map.setView([userLocation.lat, userLocation.lon], 13);
+    }
+  }, [map, userLocation, artworks, radiusKm]);
+  return null;
+};
 
 const UserCollection = () => {
   const [artworks, setArtworks] = useState([]);
@@ -12,6 +93,7 @@ const UserCollection = () => {
   const [nearbyArtworks, setNearbyArtworks] = useState([]);
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState("");
+  const [userLocation, setUserLocation] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -74,9 +156,9 @@ const UserCollection = () => {
   }, [error, retryCount]);
 
   useEffect(() => {
-    // Reset nearby artworks when collection changes
     setNearbyArtworks([]);
     setNearbyError("");
+    setUserLocation(null);
   }, [artworks]);
 
   const handleRemove = async (external_id) => {
@@ -121,6 +203,7 @@ const UserCollection = () => {
     setNearbyError("");
     setNearbyLoading(true);
     setNearbyArtworks([]);
+    setUserLocation(null);
 
     if (!navigator.geolocation) {
       setNearbyError("Geolocation is not supported by your browser.");
@@ -137,6 +220,7 @@ const UserCollection = () => {
         });
       });
       const { latitude, longitude } = position.coords;
+      setUserLocation({ lat: latitude, lon: longitude });
 
       const token = localStorage.getItem("token");
       const nearbyPromises = artworks.map((art) =>
@@ -148,6 +232,8 @@ const UserCollection = () => {
           .then((res) => ({
             ...art,
             is_nearby: res.data.is_nearby,
+            latitude: res.data.latitude || art.latitude,
+            longitude: res.data.longitude || art.longitude,
           }))
           .catch((err) => {
             console.error(`Error checking ${art.external_id}:`, err);
@@ -199,6 +285,17 @@ const UserCollection = () => {
 
   return (
     <div className="container mt-5">
+      <style>
+        {`
+          .map-container {
+            height: 400px;
+            width: 100%;
+            margin-bottom: 1rem;
+            border: 1px solid #dee2e6;
+            border-radius: 0.25rem;
+          }
+        `}
+      </style>
       <h2>My Collection</h2>
       <form onSubmit={handleCheckNearby} className="mb-4">
         <div className="input-group">
@@ -239,6 +336,52 @@ const UserCollection = () => {
           </p>
         )}
       </form>
+
+      {/* Map for Nearby Artworks */}
+      {userLocation && (
+        <div className="map-container">
+          <MapContainer
+            center={[userLocation.lat, userLocation.lon]}
+            zoom={13}
+            style={{ height: "100%", width: "100%" }}
+          >
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            />
+            <MapBounds
+              userLocation={userLocation}
+              artworks={nearbyArtworks}
+              radiusKm={radiusKm}
+            />
+            <SearchRadiusCircle
+              userLocation={userLocation}
+              radiusKm={radiusKm}
+            />
+            <Marker
+              position={[userLocation.lat, userLocation.lon]}
+              icon={redIcon}
+            >
+              <Popup>Your Location</Popup>
+            </Marker>
+            {nearbyArtworks
+              .filter((art) => art.latitude && art.longitude)
+              .map((art) => (
+                <Marker
+                  key={art.external_id}
+                  position={[art.latitude, art.longitude]}
+                >
+                  <Popup>
+                    <strong>{art.title}</strong>
+                    <br />
+                    Museum: {art.museum || "Unknown"}
+                  </Popup>
+                </Marker>
+              ))}
+          </MapContainer>
+        </div>
+      )}
+
       {isLoading && (
         <div className="text-center">
           <div className="spinner-border text-success" role="status">

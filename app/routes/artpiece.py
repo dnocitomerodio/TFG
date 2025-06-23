@@ -346,14 +346,14 @@ class ArtworkNearby(Resource):
             return {"msg": "Latitude, longitude, and radius_km must be valid numbers"}, 400
 
         try:
-            is_nearby = external_api.is_artwork_nearby(external_id, lat, lon, radius_km)
-            logger.debug("User %s checked artwork %s near (%s, %s) within %s km: %s", identity, external_id, lat, lon, radius_km, is_nearby)
+            result = external_api.is_artwork_nearby(external_id, lat, lon, radius_km)
+            logger.debug("User %s checked artwork %s near (%s, %s) within %s km: %s", identity, external_id, lat, lon, radius_km, result)
             log_user_action(identity, f"Checked if artwork {external_id} is near ({lat}, {lon}) within {radius_km} km")
-            return {"is_nearby": is_nearby}, 200
+            return result, 200
         except Exception as e:
             logger.error("Error checking artwork %s near (%s, %s) for user %s: %s", external_id, lat, lon, identity, str(e))
             return {"msg": f"Error checking artwork location: {str(e)}"}, 500
-
+        
 @api.route("/nearby/batch")
 class ArtworkNearbyBatch(Resource):
     @jwt_required()
