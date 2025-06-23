@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import axios from "../utils/api";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import ArtPieceCard from "./ArtPieceCard";
 import {
   MapContainer,
@@ -85,16 +85,27 @@ const MapBounds = ({ userLocation, artworks, radiusKm }) => {
 };
 
 const UserCollection = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const savedState = JSON.parse(
+    localStorage.getItem("collectionMapState") || "{}"
+  );
   const [artworks, setArtworks] = useState([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
-  const [radiusKm, setRadiusKm] = useState(5);
-  const [nearbyArtworks, setNearbyArtworks] = useState([]);
+  const [radiusKm, setRadiusKm] = useState(
+    location.state?.radiusKm || savedState.radiusKm || 5
+  );
+  const [nearbyArtworks, setNearbyArtworks] = useState(
+    location.state?.nearbyArtworks || savedState.nearbyArtworks || []
+  );
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState("");
-  const [userLocation, setUserLocation] = useState(null);
-  const navigate = useNavigate();
+  const [userLocation, setUserLocation] = useState(
+    location.state?.userLocation || savedState.userLocation || null
+  );
 
   useEffect(() => {
     const fetchCollection = async () => {
@@ -112,6 +123,7 @@ const UserCollection = () => {
         const externalIds = userData.artpieces || [];
         if (externalIds.length === 0) {
           setArtworks([]);
+          localStorage.removeItem("collectionMapState");
           return;
         }
         const artpiecePromises = externalIds.map((external_id) =>
@@ -156,10 +168,14 @@ const UserCollection = () => {
   }, [error, retryCount]);
 
   useEffect(() => {
-    setNearbyArtworks([]);
-    setNearbyError("");
-    setUserLocation(null);
-  }, [artworks]);
+    if (!location.state && !savedState.userLocation) {
+      setNearbyArtworks([]);
+      setNearbyError("");
+      setUserLocation(null);
+      localStorage.removeItem("collectionMapState");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [artworks, location.state]);
 
   const handleRemove = async (external_id) => {
     setError("");
@@ -169,6 +185,19 @@ const UserCollection = () => {
         headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
       });
       setArtworks(artworks.filter((art) => art.external_id !== external_id));
+      setNearbyArtworks(
+        nearbyArtworks.filter((art) => art.external_id !== external_id)
+      );
+      localStorage.setItem(
+        "collectionMapState",
+        JSON.stringify({
+          userLocation,
+          radiusKm,
+          nearbyArtworks: nearbyArtworks.filter(
+            (art) => art.external_id !== external_id
+          ),
+        })
+      );
     } catch (err) {
       console.error("Remove error:", err);
       const errorMsg =
@@ -184,6 +213,19 @@ const UserCollection = () => {
           if (!userData.artpieces.includes(external_id)) {
             setArtworks(
               artworks.filter((art) => art.external_id !== external_id)
+            );
+            setNearbyArtworks(
+              nearbyArtworks.filter((art) => art.external_id !== external_id)
+            );
+            localStorage.setItem(
+              "collectionMapState",
+              JSON.stringify({
+                userLocation,
+                radiusKm,
+                nearbyArtworks: nearbyArtworks.filter(
+                  (art) => art.external_id !== external_id
+                ),
+              })
             );
             setError(
               "Art piece removed, but there was a network issue. UI updated."
@@ -204,6 +246,7 @@ const UserCollection = () => {
     setNearbyLoading(true);
     setNearbyArtworks([]);
     setUserLocation(null);
+    localStorage.removeItem("collectionMapState");
 
     if (!navigator.geolocation) {
       setNearbyError("Geolocation is not supported by your browser.");
@@ -232,20 +275,35 @@ const UserCollection = () => {
           .then((res) => ({
             ...art,
             is_nearby: res.data.is_nearby,
-            latitude: res.data.latitude || art.latitude,
-            longitude: res.data.longitude || art.longitude,
+            latitude: res.data.latitude,
+            longitude: res.data.longitude,
           }))
           .catch((err) => {
             console.error(`Error checking ${art.external_id}:`, err);
-            return { ...art, is_nearby: false };
+            return {
+              ...art,
+              is_nearby: false,
+              latitude: null,
+              longitude: null,
+            };
           })
       );
 
       const results = await Promise.all(nearbyPromises);
-      const nearby = results.filter((art) => art.is_nearby);
+      const nearby = results.filter(
+        (art) => art.is_nearby && art.latitude && art.longitude
+      );
 
       if (nearby.length > 0) {
         setNearbyArtworks(nearby);
+        localStorage.setItem(
+          "collectionMapState",
+          JSON.stringify({
+            userLocation: { lat: latitude, lon: longitude },
+            radiusKm,
+            nearbyArtworks: nearby,
+          })
+        );
         if (Notification.permission === "granted") {
           new Notification("Nearby Artworks Found!", {
             body: `The following artworks are within ${radiusKm} km:\n${nearby
@@ -266,6 +324,14 @@ const UserCollection = () => {
         setNearbyError(
           `No artworks found within ${radiusKm} km of your location.`
         );
+        localStorage.setItem(
+          "collectionMapState",
+          JSON.stringify({
+            userLocation: { lat: latitude, lon: longitude },
+            radiusKm,
+            nearbyArtworks: [],
+          })
+        );
       }
     } catch (err) {
       console.error("Geolocation error:", err);
@@ -281,6 +347,24 @@ const UserCollection = () => {
     } finally {
       setNearbyLoading(false);
     }
+  };
+
+  const handleViewDetails = (art) => {
+    localStorage.setItem(
+      "collectionMapState",
+      JSON.stringify({
+        userLocation,
+        radiusKm,
+        nearbyArtworks,
+      })
+    );
+    navigate(`/artpiece/${art.external_id}`, {
+      state: {
+        userLocation,
+        radiusKm,
+        nearbyArtworks,
+      },
+    });
   };
 
   return (
@@ -375,6 +459,13 @@ const UserCollection = () => {
                     <strong>{art.title}</strong>
                     <br />
                     Museum: {art.museum || "Unknown"}
+                    <br />
+                    <button
+                      className="btn btn-primary btn-sm mt-2"
+                      onClick={() => handleViewDetails(art)}
+                    >
+                      View Details
+                    </button>
                   </Popup>
                 </Marker>
               ))}
