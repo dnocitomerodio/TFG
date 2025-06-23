@@ -20,27 +20,15 @@
       href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
       rel="stylesheet"
     />
-    <link
-      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css"
-      rel="stylesheet"
-    />
     <link rel="stylesheet" href="assets/css/bootstrap.min.css" />
     <link rel="stylesheet" href="assets/css/templatemo.css" />
     <link rel="stylesheet" href="assets/css/custom.css" />
 
-    <!-- Load fonts style after rendering the layout styles -->
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Roboto:wght@100;200;300;400;500;700;900&display=swap"
     />
     <link rel="stylesheet" href="assets/css/fontawesome.min.css" />
-    <!--
-    
-TemplateMo 559 Zay Shop
-
-https://templatemo.com/tm-559-zay-shop
-
--->
   </head>
 
   <body>
@@ -55,7 +43,7 @@ https://templatemo.com/tm-559-zay-shop
             <i class="fa fa-envelope mx-2"></i>
             <a
               class="navbar-sm-brand text-light text-decoration-none"
-              href="mailto:info@company.com"
+              href="mailto:info@musaica.com"
               >info@musaica.com</a
             >
             <i class="fa fa-phone mx-2"></i>
@@ -97,9 +85,9 @@ https://templatemo.com/tm-559-zay-shop
     <!-- Header -->
     <nav class="navbar navbar-expand-lg navbar-light shadow">
       <div class="container d-flex justify-content-between align-items-center">
-        <a class="navbar-brand text-success logo h1 align-self-center" href="/">
-          Musaica
-        </a>
+        <a class="navbar-brand text-success logo h1 align-self-center" href="/"
+          >Musaica</a
+        >
 
         <button
           class="navbar-toggler border-0"
@@ -121,9 +109,7 @@ https://templatemo.com/tm-559-zay-shop
             <ul
               class="nav navbar-nav d-flex justify-content-between mx-lg-auto"
             >
-              <li class="nav-item">
-                <a class="nav-link" href="/">Home</a>
-              </li>
+              <li class="nav-item"><a class="nav-link" href="/">Home</a></li>
               <li class="nav-item">
                 <a class="nav-link" href="/about">About</a>
               </li>
@@ -139,24 +125,38 @@ https://templatemo.com/tm-559-zay-shop
             </ul>
           </div>
           <div class="navbar align-self-center d-flex">
-            <div
-              class="d-lg-none flex-sm-fill mt-3 mb-4 col-7 col-sm-auto pr-3"
+            <form
+              action="/search"
+              method="get"
+              class="d-lg-none flex-sm-fill mt-3 mb-4 col-6 col-sm-5 pr-3"
             >
-              <div class="input-group">
+              <div class="input-group input-group-sm">
+                <select
+                  id="searchModeMobile"
+                  name="mode"
+                  class="form-select form-select-sm w-auto d-inline-block"
+                >
+                  <option value="title" selected>Title</option>
+                  <option value="artist">Artist</option>
+                </select>
                 <input
                   type="text"
                   class="form-control"
                   id="inputMobileSearch"
+                  name="q"
                   placeholder="Search ..."
                 />
-                <div class="input-group-text">
-                  <i class="fa fa-fw fa-search"></i>
-                </div>
+                <button
+                  type="submit"
+                  class="input-group-text bg-success text-light"
+                >
+                  <i class="fa fa-fw fa-search text-white"></i>
+                </button>
               </div>
-            </div>
+            </form>
             <a
               class="nav-icon d-none d-lg-inline"
-              href="/search"
+              href="javascript:void(0)"
               data-bs-toggle="modal"
               data-bs-target="#templatemo_search"
             >
@@ -196,7 +196,7 @@ https://templatemo.com/tm-559-zay-shop
       aria-hidden="true"
     >
       <div class="modal-dialog modal-lg" role="document">
-        <div class="w-100 pt-1 mb-5 text-right">
+        <div class="w-100 pt-1 mb-5 text-end">
           <button
             type="button"
             class="btn-close"
@@ -254,11 +254,7 @@ https://templatemo.com/tm-559-zay-shop
                 <i class="fas fa-map-marker-alt fa-fw"></i>
                 <a
                   class="text-decoration-none"
-                  href="https://www.google.es/maps/place/Edificio+la+
-                            Comercial,+Av.+de+las+Universidades,+24,+Deusto,+48007+Bilbao,+Vizcaya/@43.2713502,
-                            -2.9408299,17.75z/data=!3m1!5s0xd4e502033e197f5:0xa0966bfe7773bbac!4m6!3m5!1s0xd4e5
-                            020314d3935:0x47df50a9656ddd04!8m2!3d43.2716621!4d-2.9396815!16s%2Fg%2F11_rs_wt6?hl
-                            =es&entry=ttu&g_ep=EgoyMDI1MDEwNy4wIKXMDSoASAFQAw%3D%3D"
+                  href="https://www.google.es/maps/place/Edificio+la+Comercial,+Av.+de+las+Universidades,+24,+Deusto,+48007+Bilbao,+Vizcaya/@43.2713502,-2.9408299,17.75z/data=!3m1!5s0xd4e502033e197f5:0xa0966bfe7773bbac!4m6!3m5!1s0xd4e5020314d3935:0x47df50a9656ddd04!8m2!3d43.2716621!4d-2.9396815!16s%2Fg%2F11_rs_wt6?hl=es&entry=ttu&g_ep=EgoyMDI1MDEwNy4wIKXMDSoASAFQAw%3D%3D"
                 >
                   Unibertsitate Etorb., 24, Deusto, 48007 Bilbo, Bizkaia
                 </a>
@@ -271,7 +267,7 @@ https://templatemo.com/tm-559-zay-shop
               </li>
               <li>
                 <i class="fa fa-envelope fa-fw"></i>
-                <a class="text-decoration-none" href="mailto:info@company.com"
+                <a class="text-decoration-none" href="mailto:info@musaica.com"
                   >info@musaica.com</a
                 >
               </li>
@@ -422,7 +418,7 @@ https://templatemo.com/tm-559-zay-shop
           <div class="row pt-2">
             <div class="col-12">
               <p class="text-left text-light">
-                Copyright &copy; 2024 Musaica | Designed by
+                Copyright © 2024 Musaica | Designed by
                 <a rel="sponsored" href="https://templatemo.com" target="_blank"
                   >TemplateMo</a
                 >
@@ -438,9 +434,23 @@ https://templatemo.com/tm-559-zay-shop
     <script src="assets/js/jquery-1.11.0.min.js"></script>
     <script src="assets/js/jquery-migrate-1.2.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="assets/js/bootstrap.bundle.min.js"></script>
     <script src="assets/js/templatemo.js"></script>
     <script src="assets/js/custom.js"></script>
+    <script>
+      document.querySelectorAll('[data-bs-toggle="collapse"]').forEach((el) => {
+        el.addEventListener("click", () => {
+          console.log("Navbar toggle clicked");
+        });
+      });
+      document.querySelectorAll('[data-bs-toggle="modal"]').forEach((el) => {
+        el.addEventListener("click", () => {
+          console.log(
+            "Modal trigger clicked:",
+            el.getAttribute("data-bs-target")
+          );
+        });
+      });
+    </script>
     <!-- End Script -->
   </body>
 </html>
