@@ -40,17 +40,14 @@ const Home = () => {
               <div className="col-lg-6 mb-0 d-flex align-items-center">
                 <div className="text-align-left align-self-center">
                   <h1 className="h1 text-success">
-                    <b>Musaica</b> management
+                    Start with <b>Musaica</b>
                   </h1>
-                  <h3 className="h2">
-                    Perfect for keeping a registry of a museum or a private
-                    collection
-                  </h3>
+                  <h3 className="h2">Build and track your art collection</h3>
                   <p>
-                    Musaica is an art collections management application
-                    developed by Daniel Nocito Merodio. This work is intended
-                    for the teacher only and any further exposure isn't intended
-                    by its creator.
+                    Create your <strong>Collection</strong> in{" "}
+                    <strong>Musaica</strong>. Add your favorite artworks and set
+                    your mobility area in your profile to get alerts when your
+                    saved pieces are nearby.
                   </p>
                 </div>
               </div>
@@ -71,16 +68,15 @@ const Home = () => {
               </div>
               <div className="col-lg-6 mb-0 d-flex align-items-center">
                 <div className="text-align-left">
-                  <h1 className="h1">How does collections work?</h1>
+                  <h1 className="h1">Personalized Art Insights</h1>
                   <h3 className="h2">
-                    Register all the art pieces in your possession to keep track
-                    of them
+                    Get AI descriptions and recommendations
                   </h3>
                   <p>
-                    Each user has a collection assigned to them. Your{" "}
-                    <strong>Collection</strong> starts empty, but you can add
-                    art to increase it. Later on, you can manage the collection
-                    by adding sub-categories to it.
+                    Explore art with <strong>Musaica</strong>’s AI-powered
+                    descriptions tailored to your interests. Visit your profile
+                    to set preferences and receive curated artwork
+                    recommendations.
                   </p>
                 </div>
               </div>
@@ -101,16 +97,13 @@ const Home = () => {
               </div>
               <div className="col-lg-6 mb-0 d-flex align-items-center">
                 <div className="text-align-left">
-                  <h1 className="h1">Search for art</h1>
-                  <h3 className="h2">
-                    If you want to explore or look up for art, use the search
-                    category or our search bar.
-                  </h3>
+                  <h1 className="h1">Find Art Nearby</h1>
+                  <h3 className="h2">Search and stay updated on local art</h3>
                   <p>
-                    We bring you 100% free CSS templates for your websites. If
-                    you wish to support TemplateMo, please make a small
-                    contribution via PayPal or tell your friends about our
-                    website. Thank you.
+                    Use the <strong>Search</strong> bar to find artworks by
+                    title or artist near your location. Add pieces to your{" "}
+                    <strong>Collection</strong> to get alerts when they’re
+                    within your mobility area.
                   </p>
                 </div>
               </div>
