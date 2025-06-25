@@ -9,7 +9,6 @@ from app.models import ArtPiece
 from app.services.logger_service import log_user_action
 from pymongo.errors import DuplicateKeyError
 
-# Configure logging to INFO level to suppress DEBUG logs in production
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 

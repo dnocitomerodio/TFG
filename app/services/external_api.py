@@ -115,25 +115,30 @@ class ExternalAPI:
             return base_description
         elif user_level == "beginner":
             prompt = (
-                "Explain the following artwork in simple terms for a beginner:\n\n"
+                "Explain the following artwork in simple and accessible language, as if you were talking to someone with no background in art. "
+                "Write a natural, flowing paragraph without using sections, titles, bold text, or bullet points. Just a single, coherent block of text.\n\n"
                 f"Title: {title}\n"
                 f"Author: {author}\n"
                 f"Description: {base_description}"
             )
         elif user_level == "expert":
             prompt = (
-                "Explain the following artwork with detailed technical and historical insights for an expert:\n\n"
+                "Provide a detailed explanation of the following artwork, including relevant technical and historical context. "
+                "Write in a continuous, essay-like format without dividing the content into sections, titles, or using any bold text. "
+                "Keep the tone sophisticated but natural, and avoid any structured formatting.\n\n"
                 f"Title: {title}\n"
                 f"Author: {author}\n"
                 f"Description: {base_description}"
             )
         else:
             prompt = (
-                "Develop and enrich the following artwork description:\n\n"
+                "Expand and enrich the following artwork description in a natural, flowing way. "
+                "Avoid using sections, titles, bullet points, or bold text. The output should be a cohesive, single block of text that reads smoothly.\n\n"
                 f"Title: {title}\n"
                 f"Author: {author}\n"
                 f"Description: {base_description}"
             )
+
 
         try:
             completion = self.client.complete(
