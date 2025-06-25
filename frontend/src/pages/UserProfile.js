@@ -621,8 +621,9 @@ const UserProfile = () => {
                     onChange={(e) => setLevel(e.target.value)}
                   >
                     <option value="none">None</option>
-                    <option value="basic">Basic</option>
-                    <option value="detailed">Detailed</option>
+                    <option value="begginer">Basic</option>
+                    <option value="intermediate">Intermediate</option>
+                    <option value="expert">Advanced</option>
                   </select>
                 </div>
                 <button

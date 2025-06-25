@@ -113,47 +113,46 @@ class ExternalAPI:
     def generate_artwork_description(self, title, author, base_description, user_level):
         if user_level == "none":
             return base_description
-        elif user_level == "beginner":
-            prompt = (
-                "Explain the following artwork in simple and accessible language, as if you were talking to someone with no background in art. "
-                "Write a natural, flowing paragraph without using sections, titles, bold text, or bullet points. Just a single, coherent block of text.\n\n"
-                f"Title: {title}\n"
-                f"Author: {author}\n"
-                f"Description: {base_description}"
-            )
+        
+        if user_level == "beginner":
+            user_token = 500
+        elif user_level == "intermediate":
+            user_token = 700
         elif user_level == "expert":
-            prompt = (
-                "Provide a detailed explanation of the following artwork, including relevant technical and historical context. "
-                "Write in a continuous, essay-like format without dividing the content into sections, titles, or using any bold text. "
-                "Keep the tone sophisticated but natural, and avoid any structured formatting.\n\n"
-                f"Title: {title}\n"
-                f"Author: {author}\n"
-                f"Description: {base_description}"
-            )
-        else:
-            prompt = (
-                "Expand and enrich the following artwork description in a natural, flowing way. "
-                "Avoid using sections, titles, bullet points, or bold text. The output should be a cohesive, single block of text that reads smoothly.\n\n"
-                f"Title: {title}\n"
-                f"Author: {author}\n"
-                f"Description: {base_description}"
-            )
+            user_token = 900
 
+        level_instruction = {
+            "beginner": "Use simple and accessible language, as if explaining to someone with no background in art.",
+            "expert": "Include technical and historical insights appropriate for someone with an advanced understanding of art.",
+            "intermediate": "Expand and enrich the description in a clear and engaging way without oversimplifying or going too technical."
+        }
+
+        instruction = level_instruction.get(user_level, level_instruction["intermediate"])
+
+        prompt = (
+            f"{instruction}\n"
+            "Write a natural, flowing paragraph with no sections, titles, formatting, or bullet points.\n\n"
+            f"Title: {title}\n"
+            f"Author: {author}\n"
+            f"Description: {base_description}"
+        )
 
         try:
             completion = self.client.complete(
                 messages=[
-                    SystemMessage("You are an art expert who provides descriptions and explanations."),
-                    UserMessage(prompt),  
-                ], model=self.ai_model,
-                temperature=1.0,
-                top_p=1.0,
-                max_tokens=1000
+                    SystemMessage("You are an art expert who writes fluid, natural explanations in paragraph form, without formatting or structure."),
+                    UserMessage(prompt),
+                ],
+                model=self.ai_model,
+                temperature=0.9,
+                top_p=0.95,
+                max_tokens=user_token
             )
             return completion.choices[0].message.content
         except Exception as e:
             logger.error("Error generating enriched description for %s by %s: %s", title, author, str(e))
             return base_description
+
 
     def fetch_single_art_piece(self, external_id: str, user_level="none"):
         external_id = external_id.strip()

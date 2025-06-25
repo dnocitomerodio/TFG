@@ -146,6 +146,15 @@ const CollectionDetails = () => {
                       Want a basic explanation?
                     </span>
                   )}
+                  {descriptionLevel !== "intermediate" && (
+                    <span
+                      className="text-primary ms-2"
+                      style={{ cursor: "pointer", textDecoration: "underline" }}
+                      onClick={() => handleLevelChange("intermediate")}
+                    >
+                      Want an intermediate explanation?
+                    </span>
+                  )}
                   {descriptionLevel !== "expert" && (
                     <span
                       className="text-primary ms-2"
