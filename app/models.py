@@ -1,4 +1,5 @@
 from flask_pymongo import ObjectId
+from bson import ObjectId
 from datetime import datetime
 
 class ArtPiece:
@@ -64,42 +65,54 @@ class User:
             "last_notified_artworks": self.last_notified_artworks
         }
 
-class Reply:
-    def __init__(self, data):
-        self.content = data.get("content", "")
-        self.author_id = str(data.get("author_id", ""))
-        self.author_email = data.get("author_email", "")
-        self.created_at = data.get("created_at", datetime.utcnow())
-        self.reported = data.get("reported", False)
-
-    def to_dict(self):
-        return {
-            "content": self.content,
-            "author_id": self.author_id,
-            "author_email": self.author_email,
-            "created_at": self.created_at,
-            "reported": self.reported
-        }
-
 class Thread:
     def __init__(self, data):
-        self._id = str(data.get("_id", ""))
-        self.title = data.get("title", "")
-        self.content = data.get("content", "")
-        self.author_id = str(data.get("author_id", ""))
-        self.author_email = data.get("author_email", "")
-        self.created_at = data.get("created_at", datetime.utcnow())
-        self.replies = [Reply(reply).to_dict() for reply in data.get("replies", [])]
+        self._id = data.get("_id")
+        self.title = data.get("title")
+        self.content = data.get("content")
+        self.author_id = data.get("author_id")
+        self.author_email = data.get("author_email")
+        self.created_at = data.get("created_at")
+        self.replies = [Reply(reply) for reply in data.get("replies", [])]
         self.reported = data.get("reported", False)
+        self.likes = data.get("likes", 0)
+        self.dislikes = data.get("dislikes", 0)
+        self.voters = data.get("voters", [])
 
     def to_dict(self):
         return {
-            "_id": self._id,
+            "_id": str(self._id) if isinstance(self._id, ObjectId) else self._id,
             "title": self.title,
             "content": self.content,
-            "author_id": self.author_id,
+            "author_id": str(self.author_id) if isinstance(self.author_id, ObjectId) else self.author_id,
             "author_email": self.author_email,
             "created_at": self.created_at,
-            "replies": self.replies,
-            "reported": self.reported
+            "replies": [reply.to_dict() for reply in self.replies],
+            "reported": self.reported,
+            "likes": self.likes,
+            "dislikes": self.dislikes,
+            "voters": self.voters
+        }
+
+class Reply:
+    def __init__(self, data):
+        self.content = data.get("content")
+        self.author_id = data.get("author_id")
+        self.author_email = data.get("author_email")
+        self.created_at = data.get("created_at")
+        self.reported = data.get("reported", False)
+        self.likes = data.get("likes", 0)
+        self.dislikes = data.get("dislikes", 0)
+        self.voters = data.get("voters", [])
+
+    def to_dict(self):
+        return {
+            "content": self.content,
+            "author_id": str(self.author_id) if isinstance(self.author_id, ObjectId) else self.author_id,
+            "author_email": self.author_email,
+            "created_at": self.created_at,
+            "reported": self.reported,
+            "likes": self.likes,
+            "dislikes": self.dislikes,
+            "voters": self.voters
         }
