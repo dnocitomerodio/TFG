@@ -12,6 +12,8 @@ import Contact from "./pages/Contact";
 import UserCollection from "./pages/UserCollection";
 import UserProfile from "./pages/UserProfile";
 import CollectionDetails from "./pages/CollectionDetails";
+import Community from "./pages/Community";
+import Thread from "./pages/Thread";
 
 function App() {
   return (
@@ -32,6 +34,8 @@ function App() {
         />
         <Route path="/profile" element={<UserProfile />} />
         <Route path="/contact" element={<Contact />} />
+        <Route path="/community" element={<Community />} />
+        <Route path="/community/:id" element={<Thread />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Router>
