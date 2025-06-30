@@ -51,11 +51,21 @@ class ThreadList(Resource):
         try:
             page = int(request.args.get("page", 1))
             per_page = int(request.args.get("per_page", 10))
+            sort = request.args.get("sort", "date")
             skip = (page - 1) * per_page
-            threads = mongo.db.forums.find().sort("created_at", -1).skip(skip).limit(per_page)
+            sort_field = "created_at" if sort == "date" else "net_likes"
+            sort_direction = -1
+            pipeline = [
+                {"$set": {"net_likes": {"$subtract": [{"$ifNull": ["$likes", 0]}, {"$ifNull": ["$dislikes", 0]}]}}},
+                {"$sort": {sort_field: sort_direction}},
+                {"$skip": skip},
+                {"$limit": per_page}
+            ]
+            threads = mongo.db.forums.aggregate(pipeline)
             total_threads = mongo.db.forums.count_documents({})
             thread_list = [convert_objectid_to_str(Thread(thread).to_dict()) for thread in threads]
-            log_user_action(identity, f"Fetched community threads (page {page}, {per_page} per page)")
+            logger.info("Fetched threads: %s", [t["title"] for t in thread_list])
+            log_user_action(identity, f"Fetched community threads (page {page}, {per_page} per page, sort {sort})")
             return {
                 "threads": thread_list,
                 "total": total_threads,
@@ -116,17 +126,28 @@ class ThreadSearch(Resource):
             query = request.args.get("q", "")
             page = int(request.args.get("page", 1))
             per_page = int(request.args.get("per_page", 10))
+            sort = request.args.get("sort", "date")
             skip = (page - 1) * per_page
+            sort_field = "created_at" if sort == "date" else "net_likes"
+            sort_direction = -1
             search_filter = {
                 "$or": [
                     {"title": {"$regex": query, "$options": "i"}},
                     {"content": {"$regex": query, "$options": "i"}}
                 ]
             }
-            threads = mongo.db.forums.find(search_filter).sort("created_at", -1).skip(skip).limit(per_page)
+            pipeline = [
+                {"$match": search_filter},
+                {"$set": {"net_likes": {"$subtract": [{"$ifNull": ["$likes", 0]}, {"$ifNull": ["$dislikes", 0]}]}}},
+                {"$sort": {sort_field: sort_direction}},
+                {"$skip": skip},
+                {"$limit": per_page}
+            ]
+            threads = mongo.db.forums.aggregate(pipeline)
             total_threads = mongo.db.forums.count_documents(search_filter)
             thread_list = [convert_objectid_to_str(Thread(thread).to_dict()) for thread in threads]
-            log_user_action(identity, f"Searched threads with query '{query}' (page {page}, {per_page} per page)")
+            logger.info("Searched threads with query '%s': %s", query, [t["title"] for t in thread_list])
+            log_user_action(identity, f"Searched threads with query '{query}' (page {page}, {per_page} per page, sort {sort})")
             return {
                 "threads": thread_list,
                 "total": total_threads,
@@ -158,6 +179,13 @@ class ThreadDetail(Resource):
                     key=lambda r: (r.get("likes", 0) - r.get("dislikes", 0)),
                     reverse=True
                 )
+            elif sort == "date":
+                thread_dict["replies"] = sorted(
+                    thread_dict["replies"],
+                    key=lambda r: r.get("created_at", ""),
+                    reverse=True
+                )
+            logger.info("Fetched thread %s with %d replies, sorted by %s", thread_id, len(thread_dict["replies"]), sort)
             log_user_action(identity, f"Viewed thread {thread_id}")
             return convert_objectid_to_str(thread_dict), 200
         except Exception as e:

@@ -29,10 +29,12 @@ const Thread = () => {
             headers: { Authorization: `Bearer ${token}` },
           }
         );
-        setThread(threadResponse.data);
+        console.log("Thread response:", threadResponse.data);
+        setThread(JSON.parse(JSON.stringify(threadResponse.data)));
         setIsLoggedIn(true);
       } catch (err) {
         setError(err.response?.data?.msg || "Failed to load thread");
+        console.error("Fetch thread error:", err.response?.data || err);
       }
     };
     fetchData();
@@ -52,7 +54,7 @@ const Thread = () => {
           headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
         }
       );
-      setThread(response.data);
+      setThread(JSON.parse(JSON.stringify(response.data)));
       setNewReply({ content: "" });
       setError("");
     } catch (err) {
@@ -75,7 +77,7 @@ const Thread = () => {
           headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
         }
       );
-      setThread(response.data);
+      setThread(JSON.parse(JSON.stringify(response.data)));
     } catch (err) {
       setError(
         err.response?.data?.msg ||
@@ -133,11 +135,15 @@ const Thread = () => {
 
   return (
     <section className="container py-5">
-      <div className="row text-center pt-5 pb-3">
-        <div className="col-lg-8 m-auto">
-          <button className="btn btn-secondary mb-3" onClick={handleBack}>
+      <div className="row text-start mb-3">
+        <div className="col-lg-8">
+          <button className="btn btn-secondary" onClick={handleBack}>
             Back to Community
           </button>
+        </div>
+      </div>
+      <div className="row text-center pb-3">
+        <div className="col-lg-8 m-auto">
           <h1 className="h1">{thread.title}</h1>
           <p>
             Started by {thread.author_email} on{" "}

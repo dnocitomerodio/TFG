@@ -1,7 +1,9 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable no-unused-vars */
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import axios from "../utils/api";
+import debounce from "lodash/debounce";
 
 const Community = () => {
   const [threads, setThreads] = useState([]);
@@ -12,39 +14,56 @@ const Community = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
+  const [sort, setSort] = useState("date");
   const navigate = useNavigate();
   const location = useLocation();
+
+  const fetchData = useCallback(async (query, pageNum, sortType) => {
+    const token = localStorage.getItem("token");
+    try {
+      const profileResponse = await axios.get("/api/user/profile", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setUser(profileResponse.data);
+      const endpoint = query
+        ? `/api/community/search?q=${encodeURIComponent(
+            query
+          )}&page=${pageNum}&per_page=10&sort=${sortType}`
+        : `/api/community/?page=${pageNum}&per_page=10&sort=${sortType}`;
+      console.log("Fetching with endpoint:", endpoint);
+      const threadsResponse = await axios.get(endpoint, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      console.log("Threads response:", threadsResponse.data.threads);
+      setThreads(JSON.parse(JSON.stringify(threadsResponse.data.threads)));
+      setTotalPages(Math.ceil(threadsResponse.data.total / 10));
+      setIsLoggedIn(true);
+    } catch (err) {
+      setError(err.response?.data?.msg || "Failed to load community data");
+      console.error("Fetch threads error:", err.response?.data || err);
+    }
+  }, []);
+
+  const debouncedSearch = useCallback(
+    debounce((query, currentSort) => {
+      setPage(1);
+      fetchData(query, 1, currentSort);
+    }, 500),
+    [fetchData]
+  );
 
   useEffect(() => {
     const token = localStorage.getItem("token");
     setIsLoggedIn(!!token);
-    const state = location.state || {};
-    setSearchQuery(state.searchQuery || "");
-    setPage(state.page || 1);
 
-    const fetchData = async () => {
-      try {
-        const profileResponse = await axios.get("/api/user/profile", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setUser(profileResponse.data);
-        const endpoint = searchQuery
-          ? `/api/community/search?q=${encodeURIComponent(
-              searchQuery
-            )}&page=${page}&per_page=10`
-          : `/api/community/?page=${page}&per_page=10`;
-        const threadsResponse = await axios.get(endpoint, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setThreads(threadsResponse.data.threads);
-        setTotalPages(Math.ceil(threadsResponse.data.total / 10));
-        setIsLoggedIn(true);
-      } catch (err) {
-        setError(err.response?.data?.msg || "Failed to load community data");
-      }
-    };
-    fetchData();
-  }, [page, searchQuery, location.state]);
+    if (location.state && location.state.fromBackNavigation) {
+      setSearchQuery(location.state.searchQuery || "");
+      setPage(location.state.page || 1);
+      setSort(location.state.sort || "date");
+    }
+
+    fetchData(searchQuery, page, sort);
+  }, [page, sort, fetchData]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -99,9 +118,24 @@ const Community = () => {
     }
   };
 
+  const handleSearchChange = (e) => {
+    const query = e.target.value;
+    setSearchQuery(query);
+    debouncedSearch(query, sort);
+  };
+
   const handleSearch = (e) => {
     e.preventDefault();
     setPage(1);
+    fetchData(searchQuery, 1, sort);
+  };
+
+  const handleSortChange = (e) => {
+    const newSort = e.target.value;
+    console.log("Sort changed to:", newSort);
+    setSort(newSort);
+    setPage(1);
+    fetchData(searchQuery, 1, newSort);
   };
 
   return (
@@ -111,7 +145,8 @@ const Community = () => {
           <h1 className="h1">Community Forum</h1>
           <p>
             Join the <strong>Musaica</strong> community to discuss artworks,
-            share your insights, and connect with art enthusiasts.
+            share your <strong>Collection</strong> insights, and connect with
+            art enthusiasts.
           </p>
         </div>
       </div>
@@ -131,13 +166,25 @@ const Community = () => {
                 className="form-control"
                 placeholder="Search threads by title or content..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={handleSearchChange}
               />
               <button type="submit" className="btn btn-primary">
                 Search
               </button>
             </div>
           </form>
+        </div>
+      </div>
+      <div className="row mb-3">
+        <div className="col-lg-8 m-auto">
+          <select
+            className="form-select"
+            value={sort}
+            onChange={handleSortChange}
+          >
+            <option value="date">Sort by Date</option>
+            <option value="popularity">Sort by Popularity</option>
+          </select>
         </div>
       </div>
       {isLoggedIn && (
@@ -187,7 +234,7 @@ const Community = () => {
             <Link
               to={`/community/${thread._id}`}
               className="text-decoration-none"
-              state={{ searchQuery, page }}
+              state={{ searchQuery, page, sort, fromBackNavigation: true }}
             >
               <div
                 className="h-100 py-5 services-icon-wap shadow"
